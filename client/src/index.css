@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light Mode - Green/Tech Theme */
+    --background: 210 20% 98%; /* Almost white */
+    --foreground: 224 71.4% 4.1%; /* Dark slate */
+    --card: 0 0% 100%;
+    --card-foreground: 224 71.4% 4.1%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71.4% 4.1%;
+    --primary: 142.1 76.2% 36.3%; /* Vibrant Green */
+    --primary-foreground: 355.7 100% 97.3%;
+    --secondary: 220 13% 91%; /* Light gray */
+    --secondary-foreground: 220 14.3% 9.1%;
+    --muted: 220 13% 91%;
+    --muted-foreground: 220 8.9% 43.1%;
+    --accent: 142.1 76.2% 36.3%; /* Same as primary */
+    --accent-foreground: 355.7 100% 97.3%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 142.1 76.2% 36.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Dark Mode - Green/Tech Theme */
+    --background: 224 71.4% 4.1%; /* Dark Slate */
+    --foreground: 210 20% 98%; /* Almost white */
+    --card: 224 71.4% 4.1%;
+    --card-foreground: 210 20% 98%;
+    --popover: 224 71.4% 4.1%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 142.1 70.6% 45.3%; /* Brighter Green */
+    --primary-foreground: 144.9 80.4% 10%;
+    --secondary: 215 27.9% 16.9%; /* Darker slate */
+    --secondary-foreground: 210 20% 98%;
+    --muted: 215 27.9% 16.9%;
+    --muted-foreground: 217.9 10.6% 64.9%;
+    --accent: 142.1 70.6% 45.3%;
+    --accent-foreground: 144.9 80.4% 10%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 215 27.9% 16.9%;
+    --input: 215 27.9% 16.9%;
+    --ring: 142.1 70.6% 45.3%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* Adding a subtle gradient background */
+    background-image: radial-gradient(circle at top left, hsl(var(--primary) / 0.1), transparent 30%), radial-gradient(circle at bottom right, hsl(var(--accent) / 0.1), transparent 30%);
+    min-height: 100vh;
+  }
+  /* Adding a nice focus ring to interactive elements */
+  :focus-visible {
+      @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
