@@ -1,0 +1,56 @@
+[
+  {
+    "id": "safety-guidelines",
+    "topic": "E-Waste Safety Guidelines",
+    "title": "Safe handling of e-waste",
+    "text": "Handle unwanted electronics carefully and keep them dry. Do not burn, crush, open, or dismantle devices that may contain batteries or hazardous components. Keep damaged, swollen, leaking, or hot batteries away from heat and flammable materials, and avoid touching exposed wires or sharp parts. Use an authorized collection point or registered recycler for items that may be hazardous."
+  },
+  {
+    "id": "data-safety",
+    "topic": "E-Waste Safety Guidelines",
+    "title": "Protect personal data before recycling",
+    "text": "Before giving away a laptop, phone, computer, or storage device, back up important information and remove personal accounts and data when possible. Use the device manufacturer's reset or secure erase guidance. If a device cannot be accessed, ask an authorized service or recycler about secure data destruction."
+  },
+  {
+    "id": "recycling-procedure",
+    "topic": "Recycling Procedures",
+    "title": "Preparing electronics for recycling",
+    "text": "Separate electronics from ordinary household waste and keep components together. Do not dismantle complex devices at home. Reuse, repair, or refurbish working equipment where practical. For recycling, use an authorized e-waste collection centre, producer take-back programme, or registered recycler, and follow its instructions for batteries and accessories."
+  },
+  {
+    "id": "device-information",
+    "topic": "Device Information",
+    "title": "Laptops and computers",
+    "text": "Laptops and computers contain circuit boards, storage components, displays, and often rechargeable batteries. They should be kept out of mixed household waste. Remove personal data before handover, avoid opening damaged battery compartments, and use an appropriate e-waste collection or take-back channel."
+  },
+  {
+    "id": "mobile-information",
+    "topic": "Device Information",
+    "title": "Mobile phones",
+    "text": "Mobile phones contain circuit boards, screens, and rechargeable batteries. Back up and remove personal data before recycling. Keep a damaged or swollen phone away from heat and do not puncture or dismantle its battery. Use a suitable collection or take-back channel."
+  },
+  {
+    "id": "display-information",
+    "topic": "Device Information",
+    "title": "Monitors and televisions",
+    "text": "Monitors and televisions contain electronic boards, displays, wiring, and other components. Do not break or dismantle them. Keep them protected from damage and arrange collection through an appropriate e-waste channel."
+  },
+  {
+    "id": "printer-information",
+    "topic": "Device Information",
+    "title": "Printers and components",
+    "text": "Printers contain circuit boards, motors, wiring, and cartridges or consumable parts. Keep them separate from ordinary waste and ask the collection provider how cartridges and accessories should be handled."
+  },
+  {
+    "id": "battery-information",
+    "topic": "Device Information",
+    "title": "Batteries and electronic components",
+    "text": "Rechargeable batteries and loose electronic components need careful handling. Do not place loose batteries in household waste, short their terminals, burn them, or dismantle them. Keep damaged batteries isolated from heat and seek instructions from an authorized collection point."
+  },
+  {
+    "id": "india-framework",
+    "topic": "Indian E-Waste Regulations",
+    "title": "Indian e-waste management framework",
+    "text": "India has an e-waste management framework that includes responsibilities for covered producers and channels for collection and recycling. This knowledge base provides general educational information, not legal advice. Requirements can change and may depend on the product and location, so check current guidance from official government sources such as the Central Pollution Control Board before making a compliance decision."
+  }
+]

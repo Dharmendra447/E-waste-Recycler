@@ -37,6 +37,7 @@ export function Navbar() {
               
               {session.role === 'user' && <Link to="/dashboard"><Button variant="ghost">Dashboard</Button></Link>}
               {session.role === 'user' && <Link to="/ai-detection"><Button variant="ghost">AI Detection</Button></Link>}
+              {session.role === 'user' && <Link to="/ecoai-advisor"><Button variant="ghost">EcoAI Advisor</Button></Link>}
               {session.role === 'vendor' && <Link to="/vendor/dashboard"><Button variant="ghost">Dashboard</Button></Link>}
               {session.role === 'admin' && <Link to="/admin/dashboard"><Button variant="ghost">Admin Panel</Button></Link>}
               

@@ -10,3 +10,21 @@ export interface Pickup {
   latitude?: number | null;
   longitude?: number | null;
 }
+
+export interface DetectionResult {
+  deviceType: string;
+  category: string;
+  condition: string;
+  possibleHazard: string;
+  isEWaste: boolean;
+  confidence: number;
+  description: string;
+  recyclingAdvice?: RecyclingAdvice;
+}
+
+export interface RecyclingAdvice {
+  recommendedAction: string;
+  safetyAdvice: string;
+  recyclingGuidance: string;
+  relevantSources: string[];
+}

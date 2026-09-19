@@ -4,18 +4,23 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
 
 import { setupStaticServing } from './static-serve.js';
 import { db } from './db.js';
 import { createAuthMiddleware, AuthRequest } from './auth.js';
+import { analyzeEWasteImage } from './ai-detection.js';
+import { generateRecyclingAdvice } from './recycling-advice.js';
 
-// Load environment variables
-dotenv.config();
+// Load root settings first, then preserve the existing client Gemini configuration.
+dotenv.config({ path: '.env' });
+dotenv.config({ path: 'client/.env' });
 
 // --- CONFIG ---
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key';
+const ECOAI_RAG_SERVICE_URL = process.env.ECOAI_RAG_SERVICE_URL || 'http://127.0.0.1:8000';
 
 // --- MIDDLEWARE ---
 app.use(cors({
@@ -28,6 +33,13 @@ app.use(express.urlencoded({ extended: true }));
 
 // Create reusable auth middleware
 const authenticateToken = createAuthMiddleware(JWT_SECRET);
+const uploadImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    callback(null, file.mimetype.startsWith('image/'));
+  },
+}).single('image');
 
 // --- AUTH ROUTES ---
 app.post('/api/register', async (req, res) => {
@@ -145,6 +157,87 @@ app.get('/api/me', authenticateToken, async (req: AuthRequest, res) => {
     res.json(user);
   } catch {
     res.status(500).json({ message: 'Failed to fetch user profile' });
+  }
+});
+
+app.post('/api/ecoai-advisor', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.userRole !== 'user') {
+    return res.status(403).json({ message: 'Only users can use EcoAI Advisor.' });
+  }
+
+  const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
+  if (!question) {
+    return res.status(400).json({ message: 'Please enter a question.' });
+  }
+  if (question.length > 1000) {
+    return res.status(400).json({ message: 'Please keep your question under 1000 characters.' });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 35_000);
+  try {
+    const response = await fetch(`${ECOAI_RAG_SERVICE_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+      signal: controller.signal,
+    });
+
+    const responseData = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = response.status === 400 ? responseData?.detail : null;
+      return res.status(response.status === 400 ? 400 : 502).json({
+        message: message || 'EcoAI Advisor is temporarily unavailable.',
+      });
+    }
+
+    if (typeof responseData?.answer !== 'string' || !Array.isArray(responseData?.sources)) {
+      return res.status(502).json({ message: 'EcoAI Advisor returned an invalid response.' });
+    }
+
+    res.json(responseData);
+  } catch (error) {
+    const message = error instanceof Error && error.name === 'AbortError'
+      ? 'EcoAI Advisor took too long to respond.'
+      : 'EcoAI Advisor is unavailable. Please start the RAG service and try again.';
+    res.status(502).json({ message });
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
+app.post('/api/ai-detection', authenticateToken, (req: AuthRequest, res, next) => {
+  if (req.userRole !== 'user') {
+    return res.status(403).json({ message: 'Only users can use AI detection.' });
+  }
+
+  uploadImage(req, res, (error) => {
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({ message: 'The image must be 10 MB or smaller.' });
+    }
+    if (error) {
+      return res.status(400).json({ message: 'Please upload a valid image file.' });
+    }
+    next();
+  });
+}, async (req: AuthRequest, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Please upload an image to analyze.' });
+  }
+
+  try {
+    const analysis = await analyzeEWasteImage(req.file.buffer, req.file.mimetype);
+    try {
+      const recyclingAdvice = await generateRecyclingAdvice(analysis);
+      res.json({ ...analysis, recyclingAdvice });
+    } catch (error) {
+      console.error('Failed to generate recycling advice:', error);
+      res.json(analysis);
+    }
+  } catch (error) {
+    console.error('Failed to analyze e-waste image:', error);
+    const message = error instanceof Error ? error.message : 'Failed to analyze the image.';
+    res.status(502).json({ message });
   }
 });
 

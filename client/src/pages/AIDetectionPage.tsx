@@ -6,14 +6,63 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/components/ui/use-toast';
 import { UploadCloud, Sparkles } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { Badge, badgeVariants } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
+import type { DetectionResult } from '@/types';
+
+const knowledgeTopicDetails: Record<string, { summary: string; points: string[] }> = {
+  'E-Waste Safety Guidelines': {
+    summary: 'Basic precautions for handling unwanted or damaged electronic equipment.',
+    points: [
+      'Do not open, crush, burn, or place suspected batteries in household waste.',
+      'Keep damaged electronics dry and away from heat, children, and flammable materials.',
+      'Avoid touching exposed wires, sharp components, leaking fluids, or swollen batteries.',
+      'Use an authorized collection point or registered recycler for items that may be hazardous.',
+    ],
+  },
+  'Recycling Procedures': {
+    summary: 'Practical steps for preparing electronics for reuse, collection, or recycling.',
+    points: [
+      'Back up and remove personal data before handing over a device when possible.',
+      'Keep the device and its components together and avoid dismantling it at home.',
+      'Prefer an authorized e-waste collection centre, producer take-back programme, or registered recycler.',
+      'Working equipment may be suitable for repair, reuse, or refurbishment before recycling.',
+    ],
+  },
+  'Device Information': {
+    summary: 'Why common electronics need separate handling at the end of their useful life.',
+    points: [
+      'Laptops and mobile devices can contain rechargeable batteries and recoverable materials.',
+      'Displays, printers, and appliances contain electronic components that should not be mixed with household waste.',
+      'Different devices may require different collection or dismantling processes.',
+    ],
+  },
+  'Indian E-Waste Regulations': {
+    summary: 'General educational context about electronic-waste handling in India.',
+    points: [
+      'India has e-waste rules and an extended producer responsibility framework for covered electronic and electrical equipment.',
+      'Use registered or authorized collection and recycling channels where available.',
+      'Regulatory requirements can change and may depend on the item and location.',
+      'Verify current requirements with official CPCB guidance or other relevant government sources.',
+    ],
+  },
+};
 
 export function AIDetectionPage() {
   const { toast } = useToast();
   const [file, setFile] = React.useState<File | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
   const [isDetecting, setIsDetecting] = React.useState(false);
-  const [detectionResult, setDetectionResult] = React.useState<string | null>(null);
+  const [detectionResult, setDetectionResult] = React.useState<DetectionResult | null>(null);
   const [progress, setProgress] = React.useState(0);
+  const [selectedKnowledgeTopic, setSelectedKnowledgeTopic] = React.useState<string | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -29,17 +78,6 @@ export function AIDetectionPage() {
     }
   };
 
-  const fileToGenerativePart = async (file: File) => {
-    const base64EncodedDataPromise = new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-      reader.readAsDataURL(file);
-    });
-    return {
-      inlineData: { data: await base64EncodedDataPromise, mimeType: file.type },
-    };
-  }
-
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!file) {
@@ -52,52 +90,27 @@ export function AIDetectionPage() {
     }
 
     setIsDetecting(true);
-    setDetectionResult('Analyzing image...');
+    setDetectionResult(null);
     setProgress(30);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey || apiKey === 'YOUR_GOOGLE_AI_GEMINI_API_KEY') {
-        throw new Error("VITE_GEMINI_API_KEY is not set in your client/.env file.");
-      }
-const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
-      const imagePart = await fileToGenerativePart(file);
-      const prompt = "Analyze this image and identify the electronic waste item. Describe what it is. If it's not e-waste, say so.";
-
-      const payload = {
-        contents: [{
-          parts: [{ text: prompt }, imagePart],
-        }],
-      };
-      
+      const formData = new FormData();
+      formData.append('image', file);
       setProgress(60);
 
-      const response = await fetch(apiUrl, {
+      const response = await fetch('/api/ai-detection', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: formData,
       });
 
-     if (!response.ok) {
-  const errorData = await response.json();
-  console.error("Gemini API Error:", errorData);
-  throw new Error(
-    errorData?.error?.message || `Gemini API Error: ${response.status}`
-  );
-}
+      const responseData = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(responseData?.message || 'There was a problem detecting the e-waste.');
+      }
       
       setProgress(80);
-      const result = await response.json();
-      const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (text) {
-        setDetectionResult(text);
-        toast({
-          title: 'Detection Complete!',
-        });
-      } else {
-        throw new Error('Could not parse the AI response.');
-      }
+      setDetectionResult(responseData as DetectionResult);
+      toast({ title: 'Detection Complete!' });
       setProgress(100);
 
     } catch (error) {
@@ -162,11 +175,99 @@ const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3
             )}
 
             {detectionResult && !isDetecting && (
-              <div className="mt-6 rounded-md border border-primary/20 bg-primary/10 p-4">
-                <p className="font-semibold text-primary">AI Analysis:</p>
-                <p className="mt-2 text-primary/90">{detectionResult}</p>
-              </div>
+              <Card className="mt-6 border-primary/20 bg-primary/5">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-4">
+                    <CardTitle>AI E-Waste Analysis</CardTitle>
+                    <Badge variant={detectionResult.isEWaste ? 'default' : 'secondary'}>
+                      {detectionResult.isEWaste ? 'E-waste detected' : 'Not identified as e-waste'}
+                    </Badge>
+                  </div>
+                  <CardDescription>AI confidence is an estimate based on the uploaded image.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div><p className="text-sm text-muted-foreground">Device Type</p><p className="font-medium">{detectionResult.deviceType}</p></div>
+                    <div><p className="text-sm text-muted-foreground">Category</p><p className="font-medium">{detectionResult.category}</p></div>
+                    <div><p className="text-sm text-muted-foreground">Condition</p><p className="font-medium">{detectionResult.condition}</p></div>
+                    <div><p className="text-sm text-muted-foreground">Possible Hazard</p><p className="font-medium">{detectionResult.possibleHazard}</p></div>
+                    <div><p className="text-sm text-muted-foreground">E-Waste Status</p><p className="font-medium">{detectionResult.isEWaste ? 'Yes' : 'No'}</p></div>
+                    <div><p className="text-sm text-muted-foreground">Confidence (estimate)</p><p className="font-medium">{detectionResult.confidence}%</p></div>
+                  </div>
+                  <div className="border-t border-primary/10 pt-4">
+                    <p className="text-sm text-muted-foreground">Short Description</p>
+                    <p className="mt-1 text-primary/90">{detectionResult.description}</p>
+                  </div>
+                  {detectionResult.recyclingAdvice && (
+                  <div className="border-t border-primary/10 pt-4">
+                    <h3 className="font-semibold text-primary">Recycling Advice</h3>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Recommended Action</p>
+                        <p className="mt-1 text-primary/90">{detectionResult.recyclingAdvice.recommendedAction}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Safety Advice</p>
+                        <p className="mt-1 text-primary/90">{detectionResult.recyclingAdvice.safetyAdvice}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Recycling Guidance</p>
+                        <p className="mt-1 text-primary/90">{detectionResult.recyclingAdvice.recyclingGuidance}</p>
+                      </div>
+                      {detectionResult.isEWaste && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Relevant Knowledge Topics</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {detectionResult.recyclingAdvice.relevantSources.map((source) => (
+                            <button
+                              key={source}
+                              type="button"
+                              className={cn(badgeVariants({ variant: 'outline' }), 'cursor-pointer hover:bg-secondary')}
+                              onClick={() => setSelectedKnowledgeTopic(source)}
+                            >
+                              {source}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Regulatory information is educational and should be verified with current official sources.
+                        </p>
+                      </div>
+                      )}
+                    </div>
+                  </div>
+                  )}
+                </CardContent>
+              </Card>
             )}
+            <Dialog
+              open={selectedKnowledgeTopic !== null}
+              onOpenChange={(open) => {
+                if (!open) setSelectedKnowledgeTopic(null);
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{selectedKnowledgeTopic}</DialogTitle>
+                  <DialogDescription>
+                    {selectedKnowledgeTopic ? knowledgeTopicDetails[selectedKnowledgeTopic]?.summary : ''}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 text-sm text-muted-foreground">
+                  {(selectedKnowledgeTopic
+                    ? knowledgeTopicDetails[selectedKnowledgeTopic]?.points
+                    : []
+                  )?.map((point) => (
+                    <p key={point}>• {point}</p>
+                  ))}
+                  {selectedKnowledgeTopic === 'Indian E-Waste Regulations' && (
+                    <p className="border-t pt-3 text-xs">
+                      This information is educational and should be verified using current official sources.
+                    </p>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
           </form>
         </CardContent>
       </Card>

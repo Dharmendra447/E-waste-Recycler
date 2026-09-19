@@ -4,3 +4,5 @@ node_modules/
 client/.env
 dist/
 .vite/
+rag/embeddings/*.faiss
+rag/embeddings/metadata.json

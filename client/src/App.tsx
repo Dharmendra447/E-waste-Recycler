@@ -8,6 +8,7 @@ import { SignupPage } from '@/pages/SignupPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { Navbar } from '@/components/Navbar';
 import { AIDetectionPage } from '@/pages/AIDetectionPage';
+import { EcoAIAdvisorPage } from '@/pages/EcoAIAdvisorPage';
 import { VendorDashboardPage } from '@/pages/VendorDashboardPage';
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage';
 
@@ -58,6 +59,7 @@ function AppRoutes() {
       {/* User Routes */}
       <Route path="/dashboard" element={session?.role === 'user' ? <DashboardPage /> : <Navigate to="/login" />} />
       <Route path="/ai-detection" element={session?.role === 'user' ? <AIDetectionPage /> : <Navigate to="/login" />} />
+      <Route path="/ecoai-advisor" element={session?.role === 'user' ? <EcoAIAdvisorPage /> : <Navigate to="/login" />} />
 
       {/* Vendor Routes */}
       <Route path="/vendor/dashboard" element={session?.role === 'vendor' ? <VendorDashboardPage /> : <Navigate to="/login" />} />
