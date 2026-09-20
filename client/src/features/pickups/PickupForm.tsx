@@ -7,16 +7,29 @@ import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/features/auth/AuthContext';
 import { MapPin } from 'lucide-react';
+import type { Recycler } from '@/types';
 
 interface PickupFormProps {
   onPickupRequested: () => void;
+  selectedRecycler?: Recycler | null;
+  initialCategory?: string;
+  initialDeviceType?: string;
+  initialCondition?: string;
+  initialHazard?: string;
 }
 
-export function PickupForm({ onPickupRequested }: PickupFormProps) {
+export function PickupForm({ onPickupRequested, selectedRecycler, initialCategory = '', initialDeviceType = '', initialCondition = '', initialHazard = '' }: PickupFormProps) {
   const { toast } = useToast();
   const { session, refreshSession } = useAuth();
   const [address, setAddress] = React.useState('');
   const [itemsDescription, setItemsDescription] = React.useState('');
+  const [category, setCategory] = React.useState(initialCategory);
+  const [condition, setCondition] = React.useState(initialCondition);
+  const [hazard, setHazard] = React.useState(initialHazard);
+  const [quantity, setQuantity] = React.useState('1');
+  const [preferredDate, setPreferredDate] = React.useState('');
+  const [preferredTime, setPreferredTime] = React.useState('');
+  const [notes, setNotes] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [location, setLocation] = React.useState<{ latitude: number; longitude: number } | null>(null);
   const [isLocating, setIsLocating] = React.useState(false);
@@ -74,6 +87,14 @@ export function PickupForm({ onPickupRequested }: PickupFormProps) {
         body: JSON.stringify({
           address,
           items_description: itemsDescription,
+          category,
+          condition,
+          hazard,
+          quantity: Number(quantity),
+          preferred_date: preferredDate || null,
+          preferred_time: preferredTime || null,
+          vendor_id: selectedRecycler?.id || null,
+          notes: notes || null,
           latitude: location?.latitude,
           longitude: location?.longitude,
         }),
@@ -85,12 +106,13 @@ export function PickupForm({ onPickupRequested }: PickupFormProps) {
 
       toast({
         title: 'Success!',
-        description: 'Your pickup request has been submitted. You earned 10 points!',
+        description: 'Your request is now waiting for a recycler to accept it.',
       });
 
       // Clear form
       setAddress('');
       setItemsDescription('');
+      setCategory(''); setCondition(''); setHazard(''); setQuantity('1'); setPreferredDate(''); setPreferredTime(''); setNotes('');
       setLocation(null);
       
       onPickupRequested();
@@ -134,8 +156,18 @@ export function PickupForm({ onPickupRequested }: PickupFormProps) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="items">E-Waste Items</Label>
-              <Textarea id="items" value={itemsDescription} onChange={(e) => setItemsDescription(e.target.value)} placeholder="e.g., 2 laptops, 1 old monitor" required />
+              <Textarea id="items" value={itemsDescription} onChange={(e) => setItemsDescription(e.target.value)} placeholder={`e.g., 2 ${initialDeviceType || 'laptops'}, 1 old monitor`} required />
             </div>
+            {selectedRecycler && <p className="rounded-md bg-primary/10 p-3 text-sm"><strong>Selected recycler:</strong> {selectedRecycler.name}, {selectedRecycler.city}</p>}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2"><Label htmlFor="category">Category</Label><Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="IT Equipment" /></div>
+              <div className="space-y-2"><Label htmlFor="quantity">Quantity</Label><Input id="quantity" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
+              <div className="space-y-2"><Label htmlFor="condition">Condition</Label><Input id="condition" value={condition} onChange={(e) => setCondition(e.target.value)} placeholder="Working or damaged" /></div>
+              <div className="space-y-2"><Label htmlFor="hazard">Hazard information</Label><Input id="hazard" value={hazard} onChange={(e) => setHazard(e.target.value)} placeholder="None detected" /></div>
+              <div className="space-y-2"><Label htmlFor="date">Preferred date</Label><Input id="date" type="date" value={preferredDate} onChange={(e) => setPreferredDate(e.target.value)} /></div>
+              <div className="space-y-2"><Label htmlFor="time">Preferred time</Label><Input id="time" type="time" value={preferredTime} onChange={(e) => setPreferredTime(e.target.value)} /></div>
+            </div>
+            <div className="space-y-2"><Label htmlFor="notes">Notes (optional)</Label><Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Access instructions or handling notes" /></div>
           </div>
         </CardContent>
         <CardFooter>

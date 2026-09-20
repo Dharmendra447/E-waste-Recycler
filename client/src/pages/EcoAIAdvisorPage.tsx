@@ -30,6 +30,25 @@ type AnswerBlock =
   | { type: 'paragraph'; text: string }
   | { type: 'list'; items: string[] };
 
+function sanitizeAnswerText(text: string): string {
+  return text
+    .replace(/^\s*hello,\s*i am ecoai advisor\.?\s*/i, '')
+    .replace(/^\s*(?:based on the provided information|according to the provided information|based on the information provided)\s*,?\s*/i, '')
+    .replace(/^\s*(?:here is(?: what you should do| how you should handle and recycle)?|here is how you should handle and dispose of)\s*:?\s*/i, '')
+    .replace(/\(\s*(?:source topics?|relevant sources?)\s*[:\-].*?\)/gi, '')
+    .replace(/\b(?:source topics?|relevant sources?)\s*[:\-].*$/gi, '')
+    .replace(/^\s*\*?\s*sources?\s*[:\-].*$/gim, '')
+    .replace(/\bnote:\s*for.*?(government sources|official sources).*?(?:\.|$)/gi, '')
+    .replace(/\*\*/g, '')
+    .replace(/[*_`]/g, '')
+    .replace(/\(\s*$/g, '')
+    .replace(/^\s*\)/g, '')
+    .replace(/\s*\([^)]*\)\s*$/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function cleanMarkdown(text: string): string {
   return text
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
@@ -171,7 +190,7 @@ export function EcoAIAdvisorPage() {
                   <h3 className="font-semibold text-primary">AI Answer</h3>
                 </div>
                 <div className="mt-3 space-y-3 text-primary/90">
-                  {formatAnswer(answer.answer).map((block, index) => {
+                  {formatAnswer(sanitizeAnswerText(answer.answer)).map((block, index) => {
                     if (block.type === 'heading') {
                       return <h4 key={`${block.text}-${index}`} className="font-semibold text-primary">{block.text}</h4>;
                     }
@@ -190,15 +209,16 @@ export function EcoAIAdvisorPage() {
                 <p className="text-sm text-muted-foreground">Relevant Sources</p>
                 {answer.sources.length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {answer.sources.map((source) => (
+                    {answer.sources.map((source, index) => (
                       <button
-                        key={`${source.topic}-${source.title}`}
+                        key={`${source.title}-${index}`}
                         type="button"
                         className="rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                         onClick={() => setSelectedSource(source)}
+                        aria-label={`View source: ${source.title}`}
                       >
                         <Badge variant="outline" className="cursor-pointer hover:bg-secondary">
-                          {source.topic}: {source.title}
+                          {source.title}
                         </Badge>
                       </button>
                     ))}

@@ -34,8 +34,10 @@ export function PickupMap() {
     
     const handleAssign = async (pickupId: number) => {
         try {
-          const response = await fetch(`/api/pickups/${pickupId}/assign`, {
-            method: 'PUT',
+                    const response = await fetch(`/api/pickups/${pickupId}/status`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'accepted' }),
             credentials: 'include'
           });
           if (!response.ok) throw new Error('Failed to assign pickup.');

@@ -11,8 +11,8 @@ async function seed() {
 
     const accounts = [
         // Vendors
-        { name: 'Mumbai E-Waste Recyclers', email: 'mumbai@ewaste.com', password: 'password', role: 'vendor', city: 'Mumbai', address: '123, Marine Drive, Mumbai', latitude: 18.9437, longitude: 72.8258 },
-        { name: 'Pune Green Tech', email: 'pune@greentech.com', password: 'password', role: 'vendor', city: 'Pune', address: '456, MG Road, Pune', latitude: 18.5204, longitude: 73.8567 },
+        { name: 'Mumbai E-Waste Recyclers', email: 'mumbai@ewaste.com', password: 'password', role: 'vendor', city: 'Mumbai', address: '123, Marine Drive, Mumbai', latitude: 18.9437, longitude: 72.8258, accepted_categories: 'IT Equipment, Consumer Electronics, Batteries' },
+        { name: 'Pune Green Tech', email: 'pune@greentech.com', password: 'password', role: 'vendor', city: 'Pune', address: '456, MG Road, Pune', latitude: 18.5204, longitude: 73.8567, accepted_categories: 'IT Equipment, Household Appliances, Consumer Electronics' },
         // Admin
         { name: 'Admin User', email: 'admin@ewaste.com', password: 'adminpassword', role: 'admin' },
         // Regular User
@@ -30,6 +30,7 @@ async function seed() {
             address: account.address || null,
             latitude: account.latitude || null,
             longitude: account.longitude || null,
+            accepted_categories: account.accepted_categories || null,
         }).execute();
     }
 

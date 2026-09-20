@@ -37,6 +37,39 @@ def load_project_environment() -> None:
                 os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def sanitize_answer_text(text: str) -> str:
+    cleaned = text.replace("\r\n", "\n").strip()
+
+    cleaned = re.sub(r"(?i)^\s*hello,\s*i am ecoai advisor\.?\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)^\s*(?:based on the provided information|according to the provided information|based on the information provided)\s*,?\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)^\s*(?:here is(?: what you should do| how you should handle and recycle)?|here is how you should handle and dispose of)\s*:?\s*", "", cleaned)
+    cleaned = re.sub(r"(?im)^\s*(?:\*\s*)?(?:source topic|source topics|relevant sources?|sources?)\s*[:\-].*$", "", cleaned)
+    cleaned = re.sub(r"(?is)\(\s*(?:source topic|source topics|relevant sources?|sources?)\s*[:\-].*?\)", "", cleaned)
+    cleaned = re.sub(r"(?is)\bnote:\s*for.*?(?:official government sources|government sources|official sources).*?(?:\.|$)", "", cleaned)
+    cleaned = re.sub(r"\*\*", "", cleaned)
+    cleaned = re.sub(r"[*_`]+", "", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\(\s*$", "", cleaned)
+    cleaned = re.sub(r"^\s*\)", "", cleaned)
+    cleaned = re.sub(r"\s*\([^)]*\)\s*$", "", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned)
+    cleaned = re.sub(r"\(\s+", "(", cleaned)
+    cleaned = re.sub(r"\s+\)", ")", cleaned)
+    cleaned = re.sub(r"\s*\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\s*\([^)]*\)\s*(?=(?:\n|$))", "", cleaned)
+    cleaned = cleaned.strip(" \n\t()")
+    cleaned = re.sub(r"^[-*•\s]+", "", cleaned)
+    if cleaned.startswith("For "):
+        pass
+    elif cleaned.startswith("Do ") or cleaned.startswith("Keep ") or cleaned.startswith("Use ") or cleaned.startswith("Avoid ") or cleaned.startswith("Take ") or cleaned.startswith("Protect "):
+        pass
+    else:
+        cleaned = re.sub(r"^(?:Here is|This is|You should)\s+", "", cleaned, flags=re.I)
+    return cleaned.strip()
+
+
 load_project_environment()
 MODEL_NAME = os.getenv("RAG_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 
@@ -128,7 +161,16 @@ async def generate_grounded_answer(question: str, retrieved: list[tuple[dict[str
     model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
     prompt = f"""You are EcoAI Advisor. Answer the user's question using only the retrieved knowledge context below for factual claims.
 
-If the context does not contain enough information, clearly say that sufficient information was not found instead of inventing an answer. Do not fabricate regulations, recycler names, locations, legal requirements, or hazards. Give concise, practical advice. Mention the relevant source topics in the answer when useful. For Indian regulatory questions, state that current official government sources should be checked.
+Open with direct, useful advice that fits the user's question and the device or condition mentioned. Start naturally with a sentence such as "For an old television,...", "For a damaged laptop,...", or "For a damaged lithium battery,...". Do not begin with a generic intro. Keep the answer practical, brief, and easy to follow with short paragraphs or numbered steps.
+
+Rules:
+- Never start with "Based on the provided information", "According to the provided information", or any similar generic intro.
+- Never mention source topics, retrieved context, the knowledge base, or internal RAG terminology.
+- Do not include a regulatory note or government-source reminder.
+- Remove stray markdown characters like *, **, _, and backticks.
+- Do not leave dangling parentheses, raw source labels, or unfinished markdown.
+- Keep the answer specific to the actual device and condition in the question.
+- If the context is limited, say that more specific information is needed instead of guessing.
 
 USER QUESTION:
 {question}
@@ -152,7 +194,7 @@ RETRIEVED KNOWLEDGE CONTEXT:
     answer = payload.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
     if not isinstance(answer, str) or not answer.strip():
         raise HTTPException(status_code=502, detail="The AI provider returned no answer.")
-    return answer.strip()
+    return sanitize_answer_text(answer)
 
 
 @app.post("/query", response_model=AskResponse)

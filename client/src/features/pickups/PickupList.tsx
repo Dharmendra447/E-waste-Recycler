@@ -11,6 +11,8 @@ interface PickupListProps {
   filter?: 'user' | 'available' | 'assigned';
 }
 
+const statuses = ['requested', 'accepted', 'scheduled', 'collected', 'recycled'];
+
 export function PickupList({ filter = 'user' }: PickupListProps) {
   const [pickups, setPickups] = React.useState<Pickup[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -53,17 +55,18 @@ export function PickupList({ filter = 'user' }: PickupListProps) {
     fetchPickups();
   }, [fetchPickups]);
 
-  const handleAssign = async (pickupId: number) => {
+  const updateStatus = async (pickupId: number, status: string) => {
     try {
-      const response = await fetch(`/api/pickups/${pickupId}/assign`, {
-        method: 'PUT',
+      const response = await fetch(`/api/pickups/${pickupId}/status`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
         credentials: 'include'
       });
       if (!response.ok) throw new Error('Failed to assign pickup.');
-      toast({ title: "Success!", description: "Pickup assigned to you." });
+      toast({ title: "Pickup updated", description: `Status changed to ${status}.` });
       fetchPickups(); // Refresh the list
     } catch (error) {
-      toast({ title: "Error", description: "Could not assign pickup.", variant: 'destructive' });
+      toast({ title: "Error", description: "Could not update pickup.", variant: 'destructive' });
     }
   }
 
@@ -85,7 +88,7 @@ export function PickupList({ filter = 'user' }: PickupListProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Address</TableHead>
+                <TableHead>Request</TableHead>
                 <TableHead>Items</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Date</TableHead>
@@ -95,19 +98,21 @@ export function PickupList({ filter = 'user' }: PickupListProps) {
             <TableBody>
               {pickups.map((pickup) => (
                 <TableRow key={pickup.id}>
-                  <TableCell>{pickup.address}</TableCell>
-                  <TableCell>{pickup.items_description}</TableCell>
+                  <TableCell><div className="font-medium">{pickup.items_description}</div><div className="text-xs text-muted-foreground">{pickup.address}</div></TableCell>
+                  <TableCell>{pickup.category || 'Uncategorised'}{pickup.condition && <div className="text-xs text-muted-foreground">{pickup.condition}</div>}</TableCell>
                   <TableCell>
-                    <Badge variant={pickup.status === 'completed' ? 'default' : pickup.status === 'pending' ? 'outline' : 'secondary'}>
-                      {pickup.status}
+                    <Badge variant={pickup.status === 'recycled' || pickup.status === 'completed' ? 'default' : pickup.status === 'requested' || pickup.status === 'pending' ? 'outline' : 'secondary'}>
+                      {pickup.status === 'pending' ? 'requested' : pickup.status}
                     </Badge>
+                    {filter === 'user' && pickup.status !== 'rejected' && <div className="mt-2 flex flex-wrap gap-1">{statuses.map((status) => <span key={status} className={`h-1.5 w-6 rounded-full ${statuses.indexOf(status) <= statuses.indexOf(pickup.status === 'pending' ? 'requested' : pickup.status) ? 'bg-primary' : 'bg-muted'}`} title={status} />)}</div>}
                   </TableCell>
-                  <TableCell>{new Date(pickup.requested_at).toLocaleDateString()}</TableCell>
+                  <TableCell>{pickup.preferred_date || new Date(pickup.requested_at).toLocaleDateString()}<div className="text-xs text-muted-foreground">{pickup.preferred_time || ''}</div></TableCell>
                   {session?.role === 'vendor' && filter === 'available' && (
                     <TableCell className="text-right">
-                      <Button size="sm" onClick={() => handleAssign(pickup.id)}>Accept</Button>
+                      <div className="flex justify-end gap-2"><Button size="sm" onClick={() => updateStatus(pickup.id, 'accepted')}>Accept</Button><Button size="sm" variant="outline" onClick={() => updateStatus(pickup.id, 'rejected')}>Reject</Button></div>
                     </TableCell>
                   )}
+                  {session?.role === 'vendor' && filter === 'assigned' && <TableCell className="text-right"><div className="flex flex-wrap justify-end gap-2">{pickup.status === 'accepted' && <Button size="sm" onClick={() => updateStatus(pickup.id, 'scheduled')}>Schedule</Button>}{pickup.status === 'scheduled' && <Button size="sm" onClick={() => updateStatus(pickup.id, 'collected')}>Collected</Button>}{pickup.status === 'collected' && <Button size="sm" onClick={() => updateStatus(pickup.id, 'recycled')}>Recycled</Button>}</div></TableCell>}
                 </TableRow>
               ))}
             </TableBody>

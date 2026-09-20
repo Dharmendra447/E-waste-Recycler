@@ -6,11 +6,20 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { Award, LogOut } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Link } from 'react-router-dom';
 
 export function DashboardPage() {
   const [refreshKey, setRefreshKey] = React.useState(0);
   const { session, logout } = useAuth();
   const navigate = useNavigate();
+  const [impact, setImpact] = React.useState({ devices: 0, landfillKg: 0, co2Kg: 0, points: 0 });
+
+  const fetchImpact = React.useCallback(async () => {
+    const response = await fetch('/api/impact', { credentials: 'include' });
+    if (response.ok) setImpact(await response.json());
+  }, []);
+
+  React.useEffect(() => { fetchImpact(); }, [fetchImpact, refreshKey]);
 
   const handlePickupRequested = () => {
     setRefreshKey(prevKey => prevKey + 1);
@@ -59,6 +68,7 @@ export function DashboardPage() {
           <PickupList key={refreshKey} />
         </div>
       </div>
+      <section className="mt-10 space-y-4"><div className="flex items-center justify-between"><div><h2 className="text-2xl font-bold">Eco Impact</h2><p className="text-muted-foreground">Updated when a vendor marks a pickup as recycled.</p></div><Button asChild variant="outline"><Link to="/find-recycler">Find Recycler</Link></Button></div><div className="grid gap-4 sm:grid-cols-4"><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Devices recycled</p><p className="text-2xl font-bold">{impact.devices}</p></CardContent></Card><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Landfill diverted</p><p className="text-2xl font-bold">{impact.landfillKg} kg</p></CardContent></Card><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Estimated CO2 saved</p><p className="text-2xl font-bold">{impact.co2Kg} kg</p></CardContent></Card><Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Points from recycling</p><p className="text-2xl font-bold text-primary">{impact.points}</p></CardContent></Card></div></section>
     </div>
   );
 }

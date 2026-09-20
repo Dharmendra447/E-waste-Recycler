@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -56,6 +57,7 @@ const knowledgeTopicDetails: Record<string, { summary: string; points: string[] 
 };
 
 export function AIDetectionPage() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [file, setFile] = React.useState<File | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
@@ -234,6 +236,38 @@ export function AIDetectionPage() {
                         </p>
                       </div>
                       )}
+                    </div>
+                  </div>
+                  )}
+                  {detectionResult.smartRecommendation && (
+                  <div className="border-t border-primary/10 pt-4">
+                    <h3 className="font-semibold text-primary">Smart Recycling Recommendation</h3>
+                    <div className="mt-3 space-y-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Recommended Action</p>
+                        <p className="mt-1 text-lg font-semibold text-primary">{detectionResult.smartRecommendation.action}</p>
+                        <p className="mt-2 text-primary/90">{detectionResult.smartRecommendation.explanation}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-primary">Why this recommendation?</p>
+                        <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
+                          <div>
+                            <dt className="text-muted-foreground">Device</dt>
+                            <dd className="font-medium text-primary/90">{detectionResult.deviceType}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted-foreground">Condition</dt>
+                            <dd className="font-medium text-primary/90">{detectionResult.condition}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted-foreground">Hazard</dt>
+                            <dd className="font-medium text-primary/90">{detectionResult.possibleHazard}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                      <Button type="button" onClick={() => navigate(`/find-recycler?category=${encodeURIComponent(detectionResult.category)}&deviceType=${encodeURIComponent(detectionResult.deviceType)}&condition=${encodeURIComponent(detectionResult.condition)}&hazard=${encodeURIComponent(detectionResult.possibleHazard)}`)}>
+                        Find a suitable recycler
+                      </Button>
                     </div>
                   </div>
                   )}

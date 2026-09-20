@@ -11,6 +11,7 @@ import { db } from './db.js';
 import { createAuthMiddleware, AuthRequest } from './auth.js';
 import { analyzeEWasteImage } from './ai-detection.js';
 import { generateRecyclingAdvice } from './recycling-advice.js';
+import { getSmartRecyclingRecommendation } from './smart-recycling.js';
 
 // Load root settings first, then preserve the existing client Gemini configuration.
 dotenv.config({ path: '.env' });
@@ -21,6 +22,30 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key';
 const ECOAI_RAG_SERVICE_URL = process.env.ECOAI_RAG_SERVICE_URL || 'http://127.0.0.1:8000';
+
+const POINTS_BY_CATEGORY: Record<string, number> = {
+  'IT Equipment': 40,
+  'Consumer Electronics': 30,
+  'Household Appliances': 50,
+  Batteries: 25,
+  'Electrical Component': 20,
+};
+
+const IMPACT_BY_CATEGORY: Record<string, { landfillKg: number; co2Kg: number }> = {
+  'IT Equipment': { landfillKg: 8, co2Kg: 12 },
+  'Consumer Electronics': { landfillKg: 2, co2Kg: 4 },
+  'Household Appliances': { landfillKg: 18, co2Kg: 25 },
+  Batteries: { landfillKg: 1, co2Kg: 3 },
+  'Electrical Component': { landfillKg: 1, co2Kg: 2 },
+};
+
+function categoryValue(category: unknown): string {
+  return typeof category === 'string' && category.trim() ? category.trim() : 'Consumer Electronics';
+}
+
+function categoryImpact(category: string) {
+  return IMPACT_BY_CATEGORY[category] || IMPACT_BY_CATEGORY['Consumer Electronics'];
+}
 
 // --- MIDDLEWARE ---
 app.use(cors({
@@ -76,6 +101,7 @@ app.post('/api/register', async (req, res) => {
         address: role === 'vendor' ? address : null,
         latitude: role === 'vendor' ? (latitude || 0) : null,
         longitude: role === 'vendor' ? (longitude || 0) : null,
+        accepted_categories: null,
       })
       .returning(['id', 'name', 'email', 'points', 'role', 'city'])
       .executeTakeFirstOrThrow();
@@ -227,12 +253,16 @@ app.post('/api/ai-detection', authenticateToken, (req: AuthRequest, res, next) =
 
   try {
     const analysis = await analyzeEWasteImage(req.file.buffer, req.file.mimetype);
+    const smartRecommendation = getSmartRecyclingRecommendation(analysis);
+    const responseBase = smartRecommendation
+      ? { ...analysis, smartRecommendation }
+      : analysis;
     try {
       const recyclingAdvice = await generateRecyclingAdvice(analysis);
-      res.json({ ...analysis, recyclingAdvice });
+      res.json({ ...responseBase, recyclingAdvice });
     } catch (error) {
       console.error('Failed to generate recycling advice:', error);
-      res.json(analysis);
+      res.json(responseBase);
     }
   } catch (error) {
     console.error('Failed to analyze e-waste image:', error);
@@ -241,7 +271,22 @@ app.post('/api/ai-detection', authenticateToken, (req: AuthRequest, res, next) =
   }
 });
 
-// --- PICKUP ROUTES ---
+// --- RECYCLER AND PICKUP ROUTES ---
+app.get('/api/recyclers', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.userRole !== 'user') return res.status(403).json({ message: 'Only users can find recyclers.' });
+
+  const search = typeof req.query.category === 'string' ? req.query.category.trim().toLowerCase() : '';
+  try {
+    const recyclers = await db.selectFrom('users')
+      .where('role', '=', 'vendor')
+      .select(['id', 'name', 'email', 'city', 'address', 'latitude', 'longitude', 'accepted_categories'])
+      .execute();
+    res.json(recyclers.filter((recycler) => !search || (recycler.accepted_categories || '').toLowerCase().includes(search)));
+  } catch {
+    res.status(500).json({ message: 'Failed to fetch recyclers' });
+  }
+});
+
 app.get('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
 
@@ -262,7 +307,7 @@ app.get('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
 app.post('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
 
-  const { address, items_description, latitude, longitude } = req.body;
+  const { address, items_description, latitude, longitude, category, condition, hazard, quantity, preferred_date, preferred_time, vendor_id, notes } = req.body;
 
   if (!address || !items_description)
     return res.status(400).json({ message: 'Missing required fields' });
@@ -284,17 +329,24 @@ app.post('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
         items_description,
         latitude,
         longitude,
-        status: 'pending',
+        category: category || null,
+        condition: condition || null,
+        hazard: hazard || null,
+        quantity: Math.max(1, Number(quantity) || 1),
+        preferred_date: preferred_date || null,
+        preferred_time: preferred_time || null,
+        notes: notes || null,
+        vendor_id: vendor_id ? Number(vendor_id) : null,
+        status: 'requested',
         requested_at: new Date().toISOString(),
+        assigned_at: null,
+        scheduled_at: null,
+        collected_at: null,
+        recycled_at: null,
+        points_awarded: 0,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
-
-    await db
-      .updateTable('users')
-      .set((eb) => ({ points: eb('points', '+', 10) }))
-      .where('id', '=', req.userId)
-      .execute();
 
     res.status(201).json(newPickup);
   } catch (err) {
@@ -327,7 +379,7 @@ app.get('/api/vendor/pickups/available', authenticateToken, async (req: AuthRequ
   try {
     const pickups = await db
       .selectFrom('pickups')
-      .where('status', '=', 'pending')
+      .where('status', 'in', ['requested', 'pending'])
       .selectAll()
       .orderBy('requested_at', 'desc')
       .execute();
@@ -338,32 +390,79 @@ app.get('/api/vendor/pickups/available', authenticateToken, async (req: AuthRequ
   }
 });
 
-app.put('/api/pickups/:id/assign', authenticateToken, async (req: AuthRequest, res) => {
+app.put('/api/pickups/:id/status', authenticateToken, async (req: AuthRequest, res) => {
   if (req.userRole !== 'vendor')
-    return res.status(403).json({ message: 'Only vendors can assign pickups.' });
+    return res.status(403).json({ message: 'Only vendors can update pickup status.' });
 
   if (!req.userId)
     return res.status(401).json({ message: 'Unauthorized' });
 
   const pickupId = parseInt(req.params.id, 10);
+  const nextStatus = req.body?.status;
+  const allowedStatuses = ['accepted', 'scheduled', 'collected', 'recycled', 'rejected'] as const;
+  if (!allowedStatuses.includes(nextStatus)) return res.status(400).json({ message: 'Invalid pickup status.' });
 
   try {
-    const updatedPickup = await db
-      .updateTable('pickups')
-      .set({
+    const pickup = await db.selectFrom('pickups').where('id', '=', pickupId).selectAll().executeTakeFirst();
+    if (!pickup) return res.status(404).json({ message: 'Pickup not found.' });
+    if (pickup.vendor_id && pickup.vendor_id !== req.userId) return res.status(403).json({ message: 'This pickup belongs to another vendor.' });
+
+    const now = new Date().toISOString();
+    const updatedPickup = await db.transaction().execute(async (trx) => {
+      const updateValues = {
         vendor_id: req.userId,
-        status: 'scheduled',
-        assigned_at: new Date().toISOString(),
-      })
-      .where('id', '=', pickupId)
-      .where('status', '=', 'pending')
-      .returningAll()
-      .executeTakeFirstOrThrow();
+        status: nextStatus,
+        assigned_at: pickup.assigned_at || now,
+        scheduled_at: nextStatus === 'scheduled' ? now : pickup.scheduled_at,
+        collected_at: nextStatus === 'collected' ? now : pickup.collected_at,
+        recycled_at: nextStatus === 'recycled' ? now : pickup.recycled_at,
+      } as const;
+      let updated = await trx.updateTable('pickups').set(updateValues).where('id', '=', pickupId).returningAll().executeTakeFirstOrThrow();
+
+      if (nextStatus === 'recycled' && pickup.points_awarded === 0) {
+        const points = (POINTS_BY_CATEGORY[categoryValue(pickup.category)] || 20) * Math.max(1, pickup.quantity);
+        await trx.updateTable('users').set((eb) => ({ points: eb('points', '+', points) })).where('id', '=', pickup.user_id).execute();
+        await trx.updateTable('pickups').set({ points_awarded: points }).where('id', '=', pickupId).execute();
+        await trx.insertInto('reward_history').values({ user_id: pickup.user_id, pickup_id: pickupId, points, reason: `Recycled ${categoryValue(pickup.category)}`, created_at: now }).execute();
+        updated = await trx.selectFrom('pickups').where('id', '=', pickupId).selectAll().executeTakeFirstOrThrow();
+      }
+      return updated;
+    });
 
     res.json(updatedPickup);
   } catch (err) {
     console.error('Failed to assign pickup', err);
     res.status(500).json({ message: 'Failed to assign pickup. It may have already been taken.' });
+  }
+});
+
+app.put('/api/pickups/:id/assign', authenticateToken, async (req: AuthRequest, res) => {
+  req.body = { status: 'accepted' };
+  return res.redirect(307, `/api/pickups/${req.params.id}/status`);
+});
+
+app.get('/api/impact', authenticateToken, async (req: AuthRequest, res) => {
+  if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
+  try {
+    const pickups = await db.selectFrom('pickups').where('user_id', '=', req.userId).where('status', '=', 'recycled').select(['category', 'quantity', 'points_awarded']).execute();
+    const impact = pickups.reduce((total, pickup) => {
+      const values = categoryImpact(categoryValue(pickup.category));
+      const quantity = Math.max(1, pickup.quantity);
+      return { devices: total.devices + quantity, landfillKg: total.landfillKg + values.landfillKg * quantity, co2Kg: total.co2Kg + values.co2Kg * quantity, points: total.points + (pickup.points_awarded || 0) };
+    }, { devices: 0, landfillKg: 0, co2Kg: 0, points: 0 });
+    res.json(impact);
+  } catch {
+    res.status(500).json({ message: 'Failed to calculate eco impact' });
+  }
+});
+
+app.get('/api/rewards', authenticateToken, async (req: AuthRequest, res) => {
+  if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
+  try {
+    const rewards = await db.selectFrom('reward_history').where('user_id', '=', req.userId).selectAll().orderBy('created_at', 'desc').execute();
+    res.json(rewards);
+  } catch {
+    res.status(500).json({ message: 'Failed to fetch reward history' });
   }
 });
 
