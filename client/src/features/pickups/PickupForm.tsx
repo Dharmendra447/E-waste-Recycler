@@ -160,12 +160,12 @@ export function PickupForm({ onPickupRequested, selectedRecycler, initialCategor
             </div>
             {selectedRecycler && <p className="rounded-md bg-primary/10 p-3 text-sm"><strong>Selected recycler:</strong> {selectedRecycler.name}, {selectedRecycler.city}</p>}
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2"><Label htmlFor="category">Category</Label><Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="IT Equipment" /></div>
+              <div className="space-y-2"><Label htmlFor="category">Category</Label><Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="IT Equipment" required /></div>
               <div className="space-y-2"><Label htmlFor="quantity">Quantity</Label><Input id="quantity" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
               <div className="space-y-2"><Label htmlFor="condition">Condition</Label><Input id="condition" value={condition} onChange={(e) => setCondition(e.target.value)} placeholder="Working or damaged" /></div>
               <div className="space-y-2"><Label htmlFor="hazard">Hazard information</Label><Input id="hazard" value={hazard} onChange={(e) => setHazard(e.target.value)} placeholder="None detected" /></div>
-              <div className="space-y-2"><Label htmlFor="date">Preferred date</Label><Input id="date" type="date" value={preferredDate} onChange={(e) => setPreferredDate(e.target.value)} /></div>
-              <div className="space-y-2"><Label htmlFor="time">Preferred time</Label><Input id="time" type="time" value={preferredTime} onChange={(e) => setPreferredTime(e.target.value)} /></div>
+              <div className="space-y-2"><Label htmlFor="date">Preferred date</Label><Input id="date" type="date" value={preferredDate} onChange={(e) => setPreferredDate(e.target.value)} required /></div>
+              <div className="space-y-2"><Label htmlFor="time">Preferred time</Label><Input id="time" type="time" value={preferredTime} onChange={(e) => setPreferredTime(e.target.value)} required /></div>
             </div>
             <div className="space-y-2"><Label htmlFor="notes">Notes (optional)</Label><Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Access instructions or handling notes" /></div>
           </div>

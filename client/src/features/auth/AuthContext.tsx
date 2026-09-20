@@ -55,14 +55,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch('/api/logout', {
+      const response = await fetch('/api/logout', {
         method: 'POST',
         credentials: 'include'
       });
+      if (!response.ok) {
+        throw new Error(`Logout request failed (${response.status}).`);
+      }
       setSession(null);
       toast({ title: 'Logged out successfully.' });
     } catch (error) {
-      toast({ title: 'Logout failed.', variant: 'destructive' });
+      const isNetworkError = error instanceof TypeError;
+      toast({
+        title: 'Logout failed.',
+        description: isNetworkError ? 'The API server is not running. Start the project with npm start.' : error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
     }
   };
 

@@ -45,7 +45,7 @@ export function PickupList({ filter = 'user' }: PickupListProps) {
       const data = await response.json();
       setPickups(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+    setError(err instanceof TypeError ? 'The API server is unavailable. Start the project with npm start.' : err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setIsLoading(false);
     }
@@ -53,6 +53,8 @@ export function PickupList({ filter = 'user' }: PickupListProps) {
 
   React.useEffect(() => {
     fetchPickups();
+    const refreshTimer = window.setInterval(fetchPickups, 10000);
+    return () => window.clearInterval(refreshTimer);
   }, [fetchPickups]);
 
   const updateStatus = async (pickupId: number, status: string) => {
@@ -92,14 +94,14 @@ export function PickupList({ filter = 'user' }: PickupListProps) {
                 <TableHead>Items</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Date</TableHead>
-                {session?.role === 'vendor' && filter === 'available' && <TableHead className="text-right">Action</TableHead>}
+                {session?.role === 'vendor' && <TableHead className="text-right">Action</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {pickups.map((pickup) => (
                 <TableRow key={pickup.id}>
                   <TableCell><div className="font-medium">{pickup.items_description}</div><div className="text-xs text-muted-foreground">{pickup.address}</div></TableCell>
-                  <TableCell>{pickup.category || 'Uncategorised'}{pickup.condition && <div className="text-xs text-muted-foreground">{pickup.condition}</div>}</TableCell>
+                  <TableCell>{pickup.category || 'Uncategorised'}{pickup.condition && <div className="text-xs text-muted-foreground">{pickup.condition}</div>}{pickup.hazard && <div className="text-xs text-muted-foreground">Hazard: {pickup.hazard}</div>}</TableCell>
                   <TableCell>
                     <Badge variant={pickup.status === 'recycled' || pickup.status === 'completed' ? 'default' : pickup.status === 'requested' || pickup.status === 'pending' ? 'outline' : 'secondary'}>
                       {pickup.status === 'pending' ? 'requested' : pickup.status}

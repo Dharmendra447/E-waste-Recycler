@@ -22,8 +22,15 @@ async function migrate() {
       .addColumn('latitude', 'real')
       .addColumn('longitude', 'real')
       .addColumn('accepted_categories', 'text')
+      .addColumn('active', 'integer', (col) => col.notNull().defaultTo(1))
       .execute();
     if (tableNames.has('users') && !columnsFor('users').has('accepted_categories')) await db.schema.alterTable('users').addColumn('accepted_categories', 'text').execute();
+    if (tableNames.has('users') && !columnsFor('users').has('active')) await db.schema.alterTable('users').addColumn('active', 'integer', (col) => col.notNull().defaultTo(1)).execute();
+    await db.updateTable('users')
+      .set({ accepted_categories: 'IT Equipment, Consumer Electronics, Batteries, Household Appliances, Special Handling' })
+      .where('role', '=', 'vendor')
+      .where('accepted_categories', 'is', null)
+      .execute();
     console.log('Users table ready.');
 
     // Create the pickups table with foreign keys to the new users table

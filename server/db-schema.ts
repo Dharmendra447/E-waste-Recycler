@@ -14,6 +14,7 @@ export interface UsersTable {
   latitude: number | null;
   longitude: number | null;
   accepted_categories: string | null;
+  active: number;
 }
 
 export interface PickupTable {

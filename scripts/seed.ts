@@ -31,6 +31,7 @@ async function seed() {
             latitude: account.latitude || null,
             longitude: account.longitude || null,
             accepted_categories: account.accepted_categories || null,
+            active: 1,
         }).execute();
     }
 

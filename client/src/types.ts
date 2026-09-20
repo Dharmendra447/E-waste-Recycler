@@ -33,6 +33,18 @@ export interface Recycler {
   latitude: number | null;
   longitude: number | null;
   accepted_categories: string | null;
+  active?: number;
+  distanceKm?: number | null;
+  matchScore?: number;
+  specialHandling?: boolean;
+}
+
+export interface EcoImpact {
+  devices: number;
+  landfillKg: number;
+  co2Kg: number;
+  points: number;
+  completedPickups: number;
 }
 
 export interface DetectionResult {
@@ -45,6 +57,7 @@ export interface DetectionResult {
   description: string;
   recyclingAdvice?: RecyclingAdvice;
   smartRecommendation?: SmartRecyclingRecommendation;
+  estimatedValue?: string | null;
 }
 
 export interface SmartRecyclingRecommendation {

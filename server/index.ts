@@ -47,6 +47,16 @@ function categoryImpact(category: string) {
   return IMPACT_BY_CATEGORY[category] || IMPACT_BY_CATEGORY['Consumer Electronics'];
 }
 
+function estimatedValue(deviceType: string, condition: string, category: string) {
+  const device = `${deviceType} ${category}`.toLowerCase();
+  const isWorking = /working|functional|good|usable|operational|intact/.test(condition.toLowerCase());
+  if (/laptop|computer/.test(device)) return isWorking ? '₹3,000 - ₹7,000' : '₹500 - ₹1,500';
+  if (/mobile|phone|tablet/.test(device)) return isWorking ? '₹1,000 - ₹4,000' : '₹200 - ₹800';
+  if (/monitor|television|tv|display/.test(device)) return isWorking ? '₹1,500 - ₹4,000' : '₹300 - ₹1,000';
+  if (/appliance|refrigerator|printer/.test(device)) return isWorking ? '₹2,000 - ₹8,000' : '₹500 - ₹2,000';
+  return isWorking ? '₹500 - ₹2,500' : '₹100 - ₹800';
+}
+
 // --- MIDDLEWARE ---
 app.use(cors({
   origin: 'http://localhost:3000', // Frontend origin
@@ -254,9 +264,11 @@ app.post('/api/ai-detection', authenticateToken, (req: AuthRequest, res, next) =
   try {
     const analysis = await analyzeEWasteImage(req.file.buffer, req.file.mimetype);
     const smartRecommendation = getSmartRecyclingRecommendation(analysis);
-    const responseBase = smartRecommendation
-      ? { ...analysis, smartRecommendation }
-      : analysis;
+    const responseBase = {
+      ...analysis,
+      ...(smartRecommendation ? { smartRecommendation } : {}),
+      estimatedValue: analysis.isEWaste ? estimatedValue(analysis.deviceType, analysis.condition, analysis.category) : null,
+    };
     try {
       const recyclingAdvice = await generateRecyclingAdvice(analysis);
       res.json({ ...responseBase, recyclingAdvice });
@@ -276,12 +288,26 @@ app.get('/api/recyclers', authenticateToken, async (req: AuthRequest, res) => {
   if (req.userRole !== 'user') return res.status(403).json({ message: 'Only users can find recyclers.' });
 
   const search = typeof req.query.category === 'string' ? req.query.category.trim().toLowerCase() : '';
+  const hazardRequested = typeof req.query.hazard === 'string' && /battery|batteries|leak|swollen|chemical|fire|hazard|special/i.test(req.query.hazard);
+  const latitude = Number(req.query.latitude);
+  const longitude = Number(req.query.longitude);
   try {
     const recyclers = await db.selectFrom('users')
       .where('role', '=', 'vendor')
-      .select(['id', 'name', 'email', 'city', 'address', 'latitude', 'longitude', 'accepted_categories'])
+      .where('active', '=', 1)
+      .select(['id', 'name', 'email', 'city', 'address', 'latitude', 'longitude', 'accepted_categories', 'active'])
       .execute();
-    res.json(recyclers.filter((recycler) => !search || (recycler.accepted_categories || '').toLowerCase().includes(search)));
+    const ranked = recyclers.map((recycler) => {
+      const accepted = (recycler.accepted_categories || '').toLowerCase();
+      const categoryMatch = !search ? 20 : accepted.includes(search) ? 40 : 0;
+      const handlesHazard = /battery|batteries|special|hazard|safe handling/.test(accepted);
+      const hazardMatch = hazardRequested ? (handlesHazard ? 30 : 0) : 30;
+      const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude) && recycler.latitude !== null && recycler.longitude !== null;
+      const distance = hasLocation ? Math.sqrt(Math.pow((recycler.latitude! - latitude) * 111, 2) + Math.pow((recycler.longitude! - longitude) * 105, 2)) : null;
+      const proximity = distance === null ? 10 : Math.max(0, Math.round(30 - Math.min(distance, 30)));
+      return { ...recycler, distanceKm: distance === null ? null : Number(distance.toFixed(1)), matchScore: Math.min(100, categoryMatch + hazardMatch + proximity), specialHandling: handlesHazard };
+    }).sort((left, right) => right.matchScore - left.matchScore);
+    res.json(ranked);
   } catch {
     res.status(500).json({ message: 'Failed to fetch recyclers' });
   }
@@ -309,10 +335,12 @@ app.post('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
 
   const { address, items_description, latitude, longitude, category, condition, hazard, quantity, preferred_date, preferred_time, vendor_id, notes } = req.body;
 
-  if (!address || !items_description)
-    return res.status(400).json({ message: 'Missing required fields' });
+  if (!address || !items_description || !category || !preferred_date || !preferred_time || !vendor_id)
+    return res.status(400).json({ message: 'Recycler, address, item category, preferred date, and preferred time are required.' });
 
   try {
+    const recycler = await db.selectFrom('users').where('id', '=', Number(vendor_id)).where('role', '=', 'vendor').where('active', '=', 1).select(['id']).executeTakeFirst();
+    if (!recycler) return res.status(400).json({ message: 'The selected recycler is unavailable.' });
     const user = await db
       .selectFrom('users')
       .where('id', '=', req.userId)
@@ -358,6 +386,7 @@ app.post('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
 // --- VENDOR ROUTES ---
 app.get('/api/vendor/pickups/assigned', authenticateToken, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
+  if (req.userRole !== 'vendor') return res.status(403).json({ message: 'Only vendors can view assigned pickups.' });
 
   try {
     const pickups = await db
@@ -375,6 +404,7 @@ app.get('/api/vendor/pickups/assigned', authenticateToken, async (req: AuthReque
 
 app.get('/api/vendor/pickups/available', authenticateToken, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
+  if (req.userRole !== 'vendor') return res.status(403).json({ message: 'Only vendors can view available pickups.' });
 
   try {
     const pickups = await db
@@ -387,6 +417,17 @@ app.get('/api/vendor/pickups/available', authenticateToken, async (req: AuthRequ
     res.json(pickups);
   } catch {
     res.status(500).json({ message: 'Failed to fetch available pickups' });
+  }
+});
+
+app.get('/api/vendor/overview', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.userRole !== 'vendor') return res.status(403).json({ message: 'Only vendors can view this overview.' });
+  if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
+  try {
+    const pickups = await db.selectFrom('pickups').where('vendor_id', '=', req.userId).select(['status']).execute();
+    res.json({ newRequests: (await db.selectFrom('pickups').where('status', 'in', ['requested', 'pending']).select(({ fn }) => fn.countAll<number>().as('count')).executeTakeFirstOrThrow()).count, scheduled: pickups.filter((pickup) => pickup.status === 'scheduled').length, collected: pickups.filter((pickup) => pickup.status === 'collected').length, completed: pickups.filter((pickup) => pickup.status === 'recycled').length });
+  } catch {
+    res.status(500).json({ message: 'Failed to fetch vendor overview.' });
   }
 });
 
@@ -406,6 +447,16 @@ app.put('/api/pickups/:id/status', authenticateToken, async (req: AuthRequest, r
     const pickup = await db.selectFrom('pickups').where('id', '=', pickupId).selectAll().executeTakeFirst();
     if (!pickup) return res.status(404).json({ message: 'Pickup not found.' });
     if (pickup.vendor_id && pickup.vendor_id !== req.userId) return res.status(403).json({ message: 'This pickup belongs to another vendor.' });
+    const currentStatus = pickup.status === 'pending' ? 'requested' : pickup.status;
+    const validNextStatuses: Record<string, string[]> = {
+      requested: ['accepted', 'rejected'],
+      accepted: ['scheduled'],
+      scheduled: ['collected'],
+      collected: ['recycled'],
+    };
+    if (!validNextStatuses[currentStatus]?.includes(nextStatus)) {
+      return res.status(409).json({ message: `Invalid status transition from ${currentStatus} to ${nextStatus}.` });
+    }
 
     const now = new Date().toISOString();
     const updatedPickup = await db.transaction().execute(async (trx) => {
@@ -450,7 +501,7 @@ app.get('/api/impact', authenticateToken, async (req: AuthRequest, res) => {
       const quantity = Math.max(1, pickup.quantity);
       return { devices: total.devices + quantity, landfillKg: total.landfillKg + values.landfillKg * quantity, co2Kg: total.co2Kg + values.co2Kg * quantity, points: total.points + (pickup.points_awarded || 0) };
     }, { devices: 0, landfillKg: 0, co2Kg: 0, points: 0 });
-    res.json(impact);
+    res.json({ ...impact, completedPickups: pickups.length });
   } catch {
     res.status(500).json({ message: 'Failed to calculate eco impact' });
   }
@@ -475,12 +526,29 @@ app.get('/api/admin/vendors', authenticateToken, async (req: AuthRequest, res) =
     const vendors = await db
       .selectFrom('users')
       .where('role', '=', 'vendor')
-      .select(['id', 'name', 'email', 'city', 'address'])
+      .select(['id', 'name', 'email', 'city', 'address', 'accepted_categories', 'active'])
       .execute();
 
     res.json(vendors);
   } catch {
     res.status(500).json({ message: 'Failed to fetch vendors' });
+  }
+});
+
+app.get('/api/admin/overview', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ message: 'Forbidden: Admins only.' });
+  try {
+    const [users, vendors, pickups, recycled, impact] = await Promise.all([
+      db.selectFrom('users').where('role', '=', 'user').select(({ fn }) => fn.countAll<number>().as('count')).executeTakeFirstOrThrow(),
+      db.selectFrom('users').where('role', '=', 'vendor').select(({ fn }) => fn.countAll<number>().as('count')).executeTakeFirstOrThrow(),
+      db.selectFrom('pickups').select(({ fn }) => fn.countAll<number>().as('count')).executeTakeFirstOrThrow(),
+      db.selectFrom('pickups').where('status', '=', 'recycled').select(({ fn }) => fn.countAll<number>().as('count')).executeTakeFirstOrThrow(),
+      db.selectFrom('pickups').where('status', '=', 'recycled').select(['category', 'quantity']).execute(),
+    ]);
+    const totalEwasteDivertedKg = impact.reduce((sum, item) => sum + categoryImpact(categoryValue(item.category)).landfillKg * Math.max(1, item.quantity), 0);
+    res.json({ totalUsers: Number(users.count), totalVendors: Number(vendors.count), totalPickups: Number(pickups.count), completedRecycling: Number(recycled.count), totalEwasteDivertedKg });
+  } catch {
+    res.status(500).json({ message: 'Failed to fetch admin overview.' });
   }
 });
 

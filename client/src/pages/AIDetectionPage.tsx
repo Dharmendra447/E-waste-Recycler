@@ -200,6 +200,13 @@ export function AIDetectionPage() {
                     <p className="text-sm text-muted-foreground">Short Description</p>
                     <p className="mt-1 text-primary/90">{detectionResult.description}</p>
                   </div>
+                  {detectionResult.isEWaste && detectionResult.estimatedValue && (
+                    <div className="rounded-md border border-primary/20 bg-background p-4">
+                      <p className="text-sm text-muted-foreground">Estimated Recovery / Resale Value</p>
+                      <p className="mt-1 text-xl font-semibold text-primary">{detectionResult.estimatedValue}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Estimated value - not a market quote.</p>
+                    </div>
+                  )}
                   {detectionResult.recyclingAdvice && (
                   <div className="border-t border-primary/10 pt-4">
                     <h3 className="font-semibold text-primary">Recycling Advice</h3>
