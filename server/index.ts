@@ -465,6 +465,7 @@ app.get('/api/vendor/pickups/available', authenticateToken, async (req: AuthRequ
   try {
     const pickups = await db
       .selectFrom('pickups')
+      .where('vendor_id', '=', req.userId)
       .where('status', 'in', ['requested', 'pending'])
       .selectAll()
       .orderBy('requested_at', 'desc')
@@ -481,7 +482,7 @@ app.get('/api/vendor/overview', authenticateToken, async (req: AuthRequest, res)
   if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
   try {
     const pickups = await db.selectFrom('pickups').where('vendor_id', '=', req.userId).select(['status']).execute();
-    res.json({ newRequests: (await db.selectFrom('pickups').where('status', 'in', ['requested', 'pending']).select(({ fn }) => fn.countAll<number>().as('count')).executeTakeFirstOrThrow()).count, scheduled: pickups.filter((pickup) => pickup.status === 'scheduled').length, collected: pickups.filter((pickup) => pickup.status === 'collected').length, completed: pickups.filter((pickup) => pickup.status === 'recycled').length });
+    res.json({ newRequests: pickups.filter((pickup) => pickup.status === 'requested' || pickup.status === 'pending').length, scheduled: pickups.filter((pickup) => pickup.status === 'scheduled').length, collected: pickups.filter((pickup) => pickup.status === 'collected').length, completed: pickups.filter((pickup) => pickup.status === 'recycled').length });
   } catch {
     res.status(500).json({ message: 'Failed to fetch vendor overview.' });
   }
@@ -502,7 +503,7 @@ app.put('/api/pickups/:id/status', authenticateToken, async (req: AuthRequest, r
   try {
     const pickup = await db.selectFrom('pickups').where('id', '=', pickupId).selectAll().executeTakeFirst();
     if (!pickup) return res.status(404).json({ message: 'Pickup not found.' });
-    if (req.userRole === 'vendor' && pickup.vendor_id && pickup.vendor_id !== req.userId) return res.status(403).json({ message: 'This pickup belongs to another vendor.' });
+    if (req.userRole === 'vendor' && pickup.vendor_id !== req.userId) return res.status(403).json({ message: 'This pickup belongs to another vendor.' });
     const currentStatus = pickup.status === 'pending' ? 'requested' : pickup.status === 'accepted' ? 'confirmed' : pickup.status;
     const validNextStatuses: Record<string, string[]> = {
       requested: ['accepted', 'confirmed', 'rejected'],
