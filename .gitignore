@@ -6,3 +6,4 @@ dist/
 .vite/
 rag/embeddings/*.faiss
 rag/embeddings/metadata.json.venv/
+.venv/
