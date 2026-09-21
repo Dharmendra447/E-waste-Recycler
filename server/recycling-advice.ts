@@ -13,15 +13,6 @@ interface KnowledgeDocument {
   content: string;
 }
 
-interface GeminiResponse {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{ text?: string }>;
-    };
-  }>;
-  error?: { message?: string };
-}
-
 const knowledgeBase: KnowledgeDocument[] = [
   {
     topic: 'E-Waste Safety Guidelines',
@@ -73,72 +64,22 @@ function retrieveKnowledge(result: DetectionResult): KnowledgeDocument[] {
     .filter((document): document is KnowledgeDocument => Boolean(document));
 }
 
-function parseAdvice(text: string): RecyclingAdvice {
-  const withoutCodeFence = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-  const value = JSON.parse(withoutCodeFence) as Record<string, unknown>;
-
-  const stringFields = ['recommendedAction', 'safetyAdvice', 'recyclingGuidance'];
-  for (const field of stringFields) {
-    if (typeof value[field] !== 'string' || !value[field].trim()) {
-      throw new Error('The AI returned incomplete recycling advice.');
-    }
-  }
-
-  if (!Array.isArray(value.relevantSources) || value.relevantSources.length === 0 || value.relevantSources.some((source) => typeof source !== 'string' || !source.trim())) {
-    throw new Error('The AI returned invalid recycling advice sources.');
-  }
-
-  return {
-    recommendedAction: value.recommendedAction as string,
-    safetyAdvice: value.safetyAdvice as string,
-    recyclingGuidance: value.recyclingGuidance as string,
-    relevantSources: value.relevantSources as string[],
-  };
-}
-
 export async function generateRecyclingAdvice(result: DetectionResult): Promise<RecyclingAdvice> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('AI recycling advice is not configured on the server.');
-  }
-
   const documents = retrieveKnowledge(result);
-  const knowledgeContext = documents.map((document) => `TOPIC: ${document.topic}\n${document.content}`).join('\n\n');
-  const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
-  const prompt = `You provide concise recycling advice grounded only in the supplied local knowledge. Return only valid JSON with exactly these fields: recommendedAction, safetyAdvice, recyclingGuidance, relevantSources (an array of topic names). Do not invent legal requirements, collection locations, or hazards. If the item is not e-waste, say that no e-waste recycling action is indicated and recommend ordinary disposal appropriate to the visible item only when supported. Mention that regulatory information is educational and should be verified with current official sources when regulations are relevant.\n\nDETECTION:\n${JSON.stringify(result)}\n\nRETRIEVED KNOWLEDGE:\n${knowledgeContext}`;
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json' },
-      }),
-    },
-  );
-
-  const responseData = await response.json() as GeminiResponse;
-  if (!response.ok) {
-    throw new Error(responseData.error?.message || 'The AI provider could not generate recycling advice.');
-  }
-
-  const text = responseData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!text) {
-    throw new Error('The AI returned no recycling advice.');
-  }
-
-  try {
-    const advice = parseAdvice(text);
-    return {
-      ...advice,
-      relevantSources: result.isEWaste ? eWasteTopics : [],
-    };
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw new Error('The AI returned an invalid recycling advice format.');
+  const hasHazard = result.possibleHazard.toLowerCase() !== 'none detected';
+  const advice = result.isEWaste
+    ? {
+      recommendedAction: 'Use an authorized e-waste collection centre or registered recycler; do not place this item in household waste.',
+      safetyAdvice: hasHazard
+        ? `Handle the item carefully and avoid contact with the visible hazard: ${result.possibleHazard}. Keep it dry and away from heat.`
+        : 'Keep the item dry, avoid dismantling it, and keep it away from heat until it reaches an authorized collection point.',
+      recyclingGuidance: `Keep the ${result.deviceType.toLowerCase()} and its components together. ${documents[1]?.content || 'Use an authorized e-waste collection channel.'}`,
     }
-    throw error;
-  }
+    : {
+      recommendedAction: 'No e-waste recycling action is indicated for the visible item.',
+      safetyAdvice: 'No e-waste-specific hazard was identified in the image.',
+      recyclingGuidance: 'Dispose of or reuse the visible item through the ordinary channel appropriate for that item.',
+    };
+
+  return { ...advice, relevantSources: result.isEWaste ? eWasteTopics : [] };
 }

@@ -31,6 +31,20 @@ async function migrate() {
       .where('role', '=', 'vendor')
       .where('accepted_categories', 'is', null)
       .execute();
+    await db.deleteFrom('users')
+      .where('role', '=', 'vendor')
+      .where((expression) => expression.or([
+        expression.and([
+          expression('name', '=', 'fdsas'),
+          expression('address', '=', 'fdsa'),
+        ]),
+        expression.and([
+          expression('name', '=', 'DD'),
+          expression('city', '=', 'Thane'),
+          expression('email', '=', 'DDD@123'),
+        ]),
+      ]))
+      .execute();
     console.log('Users table ready.');
 
     // Create the pickups table with foreign keys to the new users table
@@ -83,6 +97,46 @@ async function migrate() {
       .addColumn('pickup_id', 'integer', (col) => col.references('pickups.id').notNull().unique())
       .addColumn('points', 'integer', (col) => col.notNull())
       .addColumn('reason', 'text', (col) => col.notNull())
+      .addColumn('created_at', 'text', (col) => col.notNull())
+      .execute();
+
+    if (!tableNames.has('detection_history')) await db.schema
+      .createTable('detection_history')
+      .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+      .addColumn('user_id', 'integer', (col) => col.references('users.id').notNull())
+      .addColumn('device_type', 'text', (col) => col.notNull())
+      .addColumn('category', 'text', (col) => col.notNull())
+      .addColumn('is_ewaste', 'integer', (col) => col.notNull())
+      .addColumn('analyzed_at', 'text', (col) => col.notNull())
+      .execute();
+
+    if (!tableNames.has('pickup_status_history')) await db.schema
+      .createTable('pickup_status_history')
+      .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+      .addColumn('pickup_id', 'integer', (col) => col.references('pickups.id').notNull())
+      .addColumn('status', 'text', (col) => col.notNull())
+      .addColumn('updated_by', 'integer', (col) => col.references('users.id'))
+      .addColumn('updated_at', 'text', (col) => col.notNull())
+      .execute();
+
+    if (!tableNames.has('campaigns')) await db.schema
+      .createTable('campaigns')
+      .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+      .addColumn('name', 'text', (col) => col.notNull())
+      .addColumn('target_kg', 'real', (col) => col.notNull())
+      .addColumn('start_date', 'text', (col) => col.notNull())
+      .addColumn('end_date', 'text', (col) => col.notNull())
+      .addColumn('created_by', 'integer', (col) => col.references('users.id').notNull())
+      .addColumn('created_at', 'text', (col) => col.notNull())
+      .execute();
+
+    if (!tableNames.has('campaign_participation')) await db.schema
+      .createTable('campaign_participation')
+      .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+      .addColumn('campaign_id', 'integer', (col) => col.references('campaigns.id').notNull())
+      .addColumn('user_id', 'integer', (col) => col.references('users.id').notNull())
+      .addColumn('pickup_id', 'integer', (col) => col.references('pickups.id').notNull().unique())
+      .addColumn('amount_kg', 'real', (col) => col.notNull())
       .addColumn('created_at', 'text', (col) => col.notNull())
       .execute();
 

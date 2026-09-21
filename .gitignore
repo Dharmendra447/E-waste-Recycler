@@ -5,4 +5,4 @@ client/.env
 dist/
 .vite/
 rag/embeddings/*.faiss
-rag/embeddings/metadata.json
+rag/embeddings/metadata.json.venv/

@@ -112,6 +112,8 @@ export async function analyzeEWasteImage(image: Buffer, mimeType: string): Promi
         }],
         generationConfig: {
           responseMimeType: 'application/json',
+          maxOutputTokens: 256,
+          temperature: 0,
         },
       }),
     },

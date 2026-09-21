@@ -13,7 +13,7 @@ export interface Pickup {
   preferred_date?: string | null;
   preferred_time?: string | null;
   notes?: string | null;
-  status: 'requested' | 'accepted' | 'scheduled' | 'collected' | 'recycled' | 'rejected' | 'pending' | 'completed' | 'cancelled';
+  status: 'requested' | 'accepted' | 'confirmed' | 'assigned' | 'scheduled' | 'collected' | 'processing' | 'recycled' | 'rejected' | 'pending' | 'completed' | 'cancelled';
   requested_at: string;
   assigned_at?: string | null;
   scheduled_at?: string | null;
@@ -22,6 +22,21 @@ export interface Pickup {
   points_awarded?: number;
   latitude?: number | null;
   longitude?: number | null;
+  recyclerName?: string | null;
+  lastStatus?: string;
+  lastStatusUpdate?: string;
+}
+
+export interface Campaign {
+  id: number;
+  name: string;
+  target_kg: number;
+  start_date: string;
+  end_date: string;
+  collectedKg: number;
+  participants: number;
+  progressPercent: number;
+  joinedPickupIds: number[];
 }
 
 export interface Recycler {
@@ -58,11 +73,32 @@ export interface DetectionResult {
   recyclingAdvice?: RecyclingAdvice;
   smartRecommendation?: SmartRecyclingRecommendation;
   estimatedValue?: string | null;
+  environmentalImpact?: EnvironmentalImpact | null;
 }
 
 export interface SmartRecyclingRecommendation {
-  action: 'Reuse' | 'Donate' | 'Refurbish' | 'Recycle' | 'Special Handling';
-  explanation: string;
+  action: 'Reuse' | 'Repair' | 'Refurbish' | 'Recycle' | 'Special Handling';
+  why: string;
+  nextSteps: string[];
+  safetyPrecautions: string;
+  nextAvailableOption: string;
+}
+
+export interface EnvironmentalImpact {
+  estimatedWeightKg: number;
+  materialRecoveryPotential: string[];
+  impactSummary: string;
+  recyclingBenefit: string;
+  recoveryPercent: number;
+}
+
+export interface RecyclingActivity {
+  devicesAnalyzed: number;
+  pickupsRequested: number;
+  itemsRecycled: number;
+  rewardPoints: number;
+  estimatedEwasteDivertedKg: number;
+  recentActivity: Array<{ type: string; detail: string; occurredAt: string }>;
 }
 
 export interface RecyclingAdvice {

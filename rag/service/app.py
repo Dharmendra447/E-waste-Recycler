@@ -8,12 +8,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-import faiss
 import httpx
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
+
+try:
+    import faiss
+except ImportError:
+    faiss = None
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 KNOWLEDGE_PATH = PROJECT_ROOT / "rag" / "knowledge_base" / "documents.json"
@@ -92,7 +96,8 @@ class AskResponse(BaseModel):
 class RAGStore:
     def __init__(self) -> None:
         self.documents: list[dict[str, str]] = []
-        self.index: faiss.Index | None = None
+        self.index: Any = None
+        self.embedding_matrix: np.ndarray | None = None
         self.model: SentenceTransformer | None = None
 
     def load(self) -> None:
@@ -105,29 +110,38 @@ class RAGStore:
         if METADATA_PATH.exists():
             cached_metadata = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
 
-        if INDEX_PATH.exists() and cached_metadata.get("content_hash") == content_hash and cached_metadata.get("model") == MODEL_NAME:
+        if faiss is not None and INDEX_PATH.exists() and cached_metadata.get("content_hash") == content_hash and cached_metadata.get("model") == MODEL_NAME:
             self.index = faiss.read_index(str(INDEX_PATH))
             return
 
         texts = [f"{document['topic']}\n{document['title']}\n{document['text']}" for document in self.documents]
         embeddings = self.model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
         matrix = np.asarray(embeddings, dtype="float32")
-        self.index = faiss.IndexFlatIP(matrix.shape[1])
-        self.index.add(matrix)
-        faiss.write_index(self.index, str(INDEX_PATH))
+        if faiss is not None:
+            self.index = faiss.IndexFlatIP(matrix.shape[1])
+            self.index.add(matrix)
+            faiss.write_index(self.index, str(INDEX_PATH))
+        else:
+            self.embedding_matrix = matrix
         METADATA_PATH.write_text(
             json.dumps({"content_hash": content_hash, "model": MODEL_NAME}, indent=2),
             encoding="utf-8",
         )
 
     def retrieve(self, question: str) -> list[tuple[dict[str, str], float]]:
-        if self.model is None or self.index is None:
+        if self.model is None or (self.index is None and self.embedding_matrix is None):
             raise RuntimeError("RAG index is not loaded")
         query_embedding = self.model.encode([question], normalize_embeddings=True, convert_to_numpy=True)
-        scores, positions = self.index.search(np.asarray(query_embedding, dtype="float32"), TOP_K)
+        if self.index is not None:
+            scores, positions = self.index.search(np.asarray(query_embedding, dtype="float32"), TOP_K)
+            ranked = zip(positions[0], scores[0])
+        else:
+            similarities = self.embedding_matrix @ np.asarray(query_embedding[0], dtype="float32")
+            positions = np.argsort(similarities)[::-1][:TOP_K]
+            ranked = ((position, similarities[position]) for position in positions)
         return [
             (self.documents[int(position)], float(score))
-            for position, score in zip(positions[0], scores[0])
+            for position, score in ranked
             if position >= 0 and float(score) >= MINIMUM_SIMILARITY
         ]
 
@@ -146,7 +160,7 @@ app = FastAPI(title="EcoAI Advisor RAG Service", lifespan=lifespan)
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok" if store.index is not None else "starting"}
+    return {"status": "ok" if store.index is not None or store.embedding_matrix is not None else "starting"}
 
 
 async def generate_grounded_answer(question: str, retrieved: list[tuple[dict[str, str], float]]) -> str:

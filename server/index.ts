@@ -39,12 +39,39 @@ const IMPACT_BY_CATEGORY: Record<string, { landfillKg: number; co2Kg: number }> 
   'Electrical Component': { landfillKg: 1, co2Kg: 2 },
 };
 
+const EARTH_RADIUS_KM = 6371;
+function haversineDistanceKm(latitude1: number, longitude1: number, latitude2: number, longitude2: number) {
+  const radians = (value: number) => value * Math.PI / 180;
+  const deltaLatitude = radians(latitude2 - latitude1);
+  const deltaLongitude = radians(longitude2 - longitude1);
+  const value = Math.sin(deltaLatitude / 2) ** 2 + Math.cos(radians(latitude1)) * Math.cos(radians(latitude2)) * Math.sin(deltaLongitude / 2) ** 2;
+  return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}
+
 function categoryValue(category: unknown): string {
   return typeof category === 'string' && category.trim() ? category.trim() : 'Consumer Electronics';
 }
 
 function categoryImpact(category: string) {
   return IMPACT_BY_CATEGORY[category] || IMPACT_BY_CATEGORY['Consumer Electronics'];
+}
+
+function environmentalImpact(category: string) {
+  const materials: Record<string, string[]> = {
+    'IT Equipment': ['Metals', 'Plastics', 'Glass', 'Components'],
+    'Consumer Electronics': ['Metals', 'Plastics', 'Glass', 'Components'],
+    'Household Appliances': ['Metals', 'Plastics', 'Glass', 'Components'],
+    Batteries: ['Metals', 'Battery materials', 'Plastics', 'Components'],
+    'Electrical Component': ['Metals', 'Circuit materials', 'Plastics', 'Components'],
+  };
+  const impact = categoryImpact(category);
+  return {
+    estimatedWeightKg: impact.landfillKg,
+    materialRecoveryPotential: materials[category] || materials['Consumer Electronics'],
+    impactSummary: `Estimated based on ${category.toLowerCase()} category.`,
+    recyclingBenefit: `May divert approximately ${impact.landfillKg} kg from landfill and avoid an estimated ${impact.co2Kg} kg of CO2 equivalent.`,
+    recoveryPercent: Math.min(95, Math.round((impact.landfillKg / 18) * 70)),
+  };
 }
 
 function estimatedValue(deviceType: string, condition: string, category: string) {
@@ -268,7 +295,19 @@ app.post('/api/ai-detection', authenticateToken, (req: AuthRequest, res, next) =
       ...analysis,
       ...(smartRecommendation ? { smartRecommendation } : {}),
       estimatedValue: analysis.isEWaste ? estimatedValue(analysis.deviceType, analysis.condition, analysis.category) : null,
+      environmentalImpact: analysis.isEWaste ? environmentalImpact(categoryValue(analysis.category)) : null,
     };
+    try {
+      await db.insertInto('detection_history').values({
+        user_id: req.userId!,
+        device_type: analysis.deviceType,
+        category: categoryValue(analysis.category),
+        is_ewaste: analysis.isEWaste ? 1 : 0,
+        analyzed_at: new Date().toISOString(),
+      }).execute();
+    } catch (error) {
+      console.error('Failed to record detection history:', error);
+    }
     try {
       const recyclingAdvice = await generateRecyclingAdvice(analysis);
       res.json({ ...responseBase, recyclingAdvice });
@@ -302,11 +341,19 @@ app.get('/api/recyclers', authenticateToken, async (req: AuthRequest, res) => {
       const categoryMatch = !search ? 20 : accepted.includes(search) ? 40 : 0;
       const handlesHazard = /battery|batteries|special|hazard|safe handling/.test(accepted);
       const hazardMatch = hazardRequested ? (handlesHazard ? 30 : 0) : 30;
-      const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude) && recycler.latitude !== null && recycler.longitude !== null;
-      const distance = hasLocation ? Math.sqrt(Math.pow((recycler.latitude! - latitude) * 111, 2) + Math.pow((recycler.longitude! - longitude) * 105, 2)) : null;
+      const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude) && latitude !== 0 && longitude !== 0 && recycler.latitude !== null && recycler.longitude !== null && recycler.latitude !== 0 && recycler.longitude !== 0;
+      const distance = hasLocation ? haversineDistanceKm(latitude, longitude, recycler.latitude!, recycler.longitude!) : null;
       const proximity = distance === null ? 10 : Math.max(0, Math.round(30 - Math.min(distance, 30)));
       return { ...recycler, distanceKm: distance === null ? null : Number(distance.toFixed(1)), matchScore: Math.min(100, categoryMatch + hazardMatch + proximity), specialHandling: handlesHazard };
-    }).sort((left, right) => right.matchScore - left.matchScore);
+    }).sort((left, right) => {
+      const hasUserLocation = Number.isFinite(latitude) && Number.isFinite(longitude) && latitude !== 0 && longitude !== 0;
+      if (hasUserLocation) {
+        if (left.distanceKm !== null && right.distanceKm !== null) return left.distanceKm - right.distanceKm;
+        if (left.distanceKm !== null) return -1;
+        if (right.distanceKm !== null) return 1;
+      }
+      return right.matchScore - left.matchScore;
+    });
     res.json(ranked);
   } catch {
     res.status(500).json({ message: 'Failed to fetch recyclers' });
@@ -323,8 +370,15 @@ app.get('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
       .selectAll()
       .orderBy('requested_at', 'desc')
       .execute();
+    const enrichedPickups = await Promise.all(pickups.map(async (pickup) => {
+      const [recycler, latestStatus] = await Promise.all([
+        pickup.vendor_id ? db.selectFrom('users').where('id', '=', pickup.vendor_id).select('name').executeTakeFirst() : Promise.resolve(null),
+        db.selectFrom('pickup_status_history').where('pickup_id', '=', pickup.id).select(['status', 'updated_at']).orderBy('updated_at', 'desc').executeTakeFirst(),
+      ]);
+      return { ...pickup, recyclerName: recycler?.name || null, lastStatus: latestStatus?.status || pickup.status, lastStatusUpdate: latestStatus?.updated_at || pickup.requested_at };
+    }));
 
-    res.json(pickups);
+    res.json(enrichedPickups);
   } catch {
     res.status(500).json({ message: 'Failed to fetch pickups' });
   }
@@ -375,6 +429,8 @@ app.post('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
       })
       .returningAll()
       .executeTakeFirstOrThrow();
+
+    await db.insertInto('pickup_status_history').values({ pickup_id: newPickup.id, status: 'requested', updated_by: req.userId, updated_at: newPickup.requested_at }).execute();
 
     res.status(201).json(newPickup);
   } catch (err) {
@@ -432,27 +488,29 @@ app.get('/api/vendor/overview', authenticateToken, async (req: AuthRequest, res)
 });
 
 app.put('/api/pickups/:id/status', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.userRole !== 'vendor')
-    return res.status(403).json({ message: 'Only vendors can update pickup status.' });
+  if (req.userRole !== 'vendor' && req.userRole !== 'admin')
+    return res.status(403).json({ message: 'Only recyclers or admins can update pickup status.' });
 
   if (!req.userId)
     return res.status(401).json({ message: 'Unauthorized' });
 
   const pickupId = parseInt(req.params.id, 10);
   const nextStatus = req.body?.status;
-  const allowedStatuses = ['accepted', 'scheduled', 'collected', 'recycled', 'rejected'] as const;
+  const allowedStatuses = ['accepted', 'confirmed', 'assigned', 'scheduled', 'collected', 'processing', 'recycled', 'rejected'] as const;
   if (!allowedStatuses.includes(nextStatus)) return res.status(400).json({ message: 'Invalid pickup status.' });
 
   try {
     const pickup = await db.selectFrom('pickups').where('id', '=', pickupId).selectAll().executeTakeFirst();
     if (!pickup) return res.status(404).json({ message: 'Pickup not found.' });
-    if (pickup.vendor_id && pickup.vendor_id !== req.userId) return res.status(403).json({ message: 'This pickup belongs to another vendor.' });
-    const currentStatus = pickup.status === 'pending' ? 'requested' : pickup.status;
+    if (req.userRole === 'vendor' && pickup.vendor_id && pickup.vendor_id !== req.userId) return res.status(403).json({ message: 'This pickup belongs to another vendor.' });
+    const currentStatus = pickup.status === 'pending' ? 'requested' : pickup.status === 'accepted' ? 'confirmed' : pickup.status;
     const validNextStatuses: Record<string, string[]> = {
-      requested: ['accepted', 'rejected'],
-      accepted: ['scheduled'],
+      requested: ['accepted', 'confirmed', 'rejected'],
+      confirmed: ['assigned', 'scheduled'],
+      assigned: ['scheduled'],
       scheduled: ['collected'],
-      collected: ['recycled'],
+      collected: ['processing'],
+      processing: ['recycled'],
     };
     if (!validNextStatuses[currentStatus]?.includes(nextStatus)) {
       return res.status(409).json({ message: `Invalid status transition from ${currentStatus} to ${nextStatus}.` });
@@ -461,7 +519,7 @@ app.put('/api/pickups/:id/status', authenticateToken, async (req: AuthRequest, r
     const now = new Date().toISOString();
     const updatedPickup = await db.transaction().execute(async (trx) => {
       const updateValues = {
-        vendor_id: req.userId,
+        vendor_id: req.userRole === 'vendor' ? req.userId : pickup.vendor_id,
         status: nextStatus,
         assigned_at: pickup.assigned_at || now,
         scheduled_at: nextStatus === 'scheduled' ? now : pickup.scheduled_at,
@@ -469,6 +527,7 @@ app.put('/api/pickups/:id/status', authenticateToken, async (req: AuthRequest, r
         recycled_at: nextStatus === 'recycled' ? now : pickup.recycled_at,
       } as const;
       let updated = await trx.updateTable('pickups').set(updateValues).where('id', '=', pickupId).returningAll().executeTakeFirstOrThrow();
+      await trx.insertInto('pickup_status_history').values({ pickup_id: pickupId, status: nextStatus, updated_by: req.userId, updated_at: now }).execute();
 
       if (nextStatus === 'recycled' && pickup.points_awarded === 0) {
         const points = (POINTS_BY_CATEGORY[categoryValue(pickup.category)] || 20) * Math.max(1, pickup.quantity);
@@ -488,8 +547,73 @@ app.put('/api/pickups/:id/status', authenticateToken, async (req: AuthRequest, r
 });
 
 app.put('/api/pickups/:id/assign', authenticateToken, async (req: AuthRequest, res) => {
-  req.body = { status: 'accepted' };
+  req.body = { status: 'confirmed' };
   return res.redirect(307, `/api/pickups/${req.params.id}/status`);
+});
+
+app.get('/api/pickups/:id/certificate', authenticateToken, async (req: AuthRequest, res) => {
+  if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
+  const pickupId = Number(req.params.id);
+  try {
+    const pickup = await db.selectFrom('pickups').where('id', '=', pickupId).selectAll().executeTakeFirst();
+    if (!pickup || (pickup.user_id !== req.userId && req.userRole !== 'admin' && req.userRole !== 'vendor')) return res.status(404).json({ message: 'Pickup not found.' });
+    if (pickup.status !== 'recycled') return res.status(409).json({ message: 'A certificate is available after recycling is completed.' });
+    const [user, recycler] = await Promise.all([
+      db.selectFrom('users').where('id', '=', pickup.user_id).select(['name']).executeTakeFirstOrThrow(),
+      pickup.vendor_id ? db.selectFrom('users').where('id', '=', pickup.vendor_id).select(['name']).executeTakeFirst() : Promise.resolve(null),
+    ]);
+    const impact = categoryImpact(categoryValue(pickup.category));
+    res.json({ certificateId: `EWR-${pickup.id}-${(pickup.recycled_at || '').slice(0, 10).replace(/-/g, '')}`, userName: user.name, device: pickup.items_description, category: categoryValue(pickup.category), recyclerName: recycler?.name || 'Authorized recycler', recyclingDate: pickup.recycled_at, estimatedEwasteDivertedKg: impact.landfillKg * Math.max(1, pickup.quantity), status: 'Recycled', applicationIssued: true });
+  } catch {
+    res.status(500).json({ message: 'Failed to generate recycling certificate.' });
+  }
+});
+
+app.get('/api/campaigns', authenticateToken, async (req: AuthRequest, res) => {
+  if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
+  try {
+    const campaigns = await db.selectFrom('campaigns').selectAll().orderBy('start_date', 'desc').execute();
+    const participation = await db.selectFrom('campaign_participation').where('user_id', '=', req.userId).select(['campaign_id', 'pickup_id']).execute();
+    const today = new Date().toISOString().slice(0, 10);
+    const results = await Promise.all(campaigns.filter((campaign) => campaign.start_date <= today && campaign.end_date >= today).map(async (campaign) => {
+      const totals = await db.selectFrom('campaign_participation').where('campaign_id', '=', campaign.id).select(({ fn }) => [fn.sum<number>('amount_kg').as('collectedKg'), fn.countAll<number>().as('participants')]).executeTakeFirstOrThrow();
+      const collectedKg = Number(totals.collectedKg || 0);
+      return { ...campaign, collectedKg, participants: Number(totals.participants || 0), progressPercent: Math.min(100, Math.round(collectedKg / campaign.target_kg * 100)), joinedPickupIds: participation.filter((item) => item.campaign_id === campaign.id).map((item) => item.pickup_id) };
+    }));
+    res.json(results);
+  } catch {
+    res.status(500).json({ message: 'Failed to fetch campaigns.' });
+  }
+});
+
+app.post('/api/campaigns/:id/participate', authenticateToken, async (req: AuthRequest, res) => {
+  if (!req.userId || req.userRole !== 'user') return res.status(403).json({ message: 'Only users can participate in campaigns.' });
+  const campaignId = Number(req.params.id);
+  const pickupId = Number(req.body?.pickup_id);
+  if (!pickupId) return res.status(400).json({ message: 'Select one of your recycled pickups to participate.' });
+  try {
+    const campaign = await db.selectFrom('campaigns').where('id', '=', campaignId).selectAll().executeTakeFirst();
+    const pickup = await db.selectFrom('pickups').where('id', '=', pickupId).where('user_id', '=', req.userId).selectAll().executeTakeFirst();
+    if (!campaign || !pickup) return res.status(404).json({ message: 'Campaign or pickup not found.' });
+    if (pickup.status !== 'recycled') return res.status(409).json({ message: 'Only recycled pickups can contribute to a campaign.' });
+    const amountKg = categoryImpact(categoryValue(pickup.category)).landfillKg * Math.max(1, pickup.quantity);
+    await db.insertInto('campaign_participation').values({ campaign_id: campaignId, user_id: req.userId, pickup_id: pickupId, amount_kg: amountKg, created_at: new Date().toISOString() }).execute();
+    res.status(201).json({ message: 'Participation recorded.', amountKg });
+  } catch {
+    res.status(409).json({ message: 'This pickup may already be participating in the campaign.' });
+  }
+});
+
+app.post('/api/admin/campaigns', authenticateToken, async (req: AuthRequest, res) => {
+  if (req.userRole !== 'admin' || !req.userId) return res.status(403).json({ message: 'Admins only.' });
+  const { name, target_kg, start_date, end_date } = req.body || {};
+  if (!name || !Number(target_kg) || !start_date || !end_date) return res.status(400).json({ message: 'Name, target, start date, and end date are required.' });
+  try {
+    const campaign = await db.insertInto('campaigns').values({ name, target_kg: Number(target_kg), start_date, end_date, created_by: req.userId, created_at: new Date().toISOString() }).returningAll().executeTakeFirstOrThrow();
+    res.status(201).json(campaign);
+  } catch {
+    res.status(500).json({ message: 'Failed to create campaign.' });
+  }
 });
 
 app.get('/api/impact', authenticateToken, async (req: AuthRequest, res) => {
@@ -504,6 +628,38 @@ app.get('/api/impact', authenticateToken, async (req: AuthRequest, res) => {
     res.json({ ...impact, completedPickups: pickups.length });
   } catch {
     res.status(500).json({ message: 'Failed to calculate eco impact' });
+  }
+});
+
+app.get('/api/activity', authenticateToken, async (req: AuthRequest, res) => {
+  if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
+  try {
+    const [user, pickups, detections] = await Promise.all([
+      db.selectFrom('users').where('id', '=', req.userId).select(['points']).executeTakeFirstOrThrow(),
+      db.selectFrom('pickups').where('user_id', '=', req.userId).select(['items_description', 'category', 'quantity', 'status', 'requested_at', 'recycled_at']).orderBy('requested_at', 'desc').execute(),
+      db.selectFrom('detection_history').where('user_id', '=', req.userId).selectAll().orderBy('analyzed_at', 'desc').execute(),
+    ]);
+    const recycledPickups = pickups.filter((pickup) => pickup.status === 'recycled' || pickup.status === 'completed');
+    const recentActivity = [
+      ...detections.map((detection) => ({ type: 'AI Analysis', detail: `${detection.device_type} analyzed`, occurredAt: detection.analyzed_at })),
+      ...pickups.map((pickup) => ({
+        type: pickup.status === 'recycled' || pickup.status === 'completed' ? 'Recycling Completed' : 'Pickup Requested',
+        detail: pickup.items_description,
+        occurredAt: pickup.recycled_at || pickup.requested_at,
+      })),
+    ].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)).slice(0, 8);
+    const diverted = recycledPickups.reduce((total, pickup) => total + categoryImpact(categoryValue(pickup.category)).landfillKg * Math.max(1, pickup.quantity || 1), 0);
+    res.json({
+      devicesAnalyzed: detections.length,
+      pickupsRequested: pickups.length,
+      itemsRecycled: recycledPickups.reduce((total, pickup) => total + Math.max(1, pickup.quantity || 1), 0),
+      rewardPoints: user.points,
+      estimatedEwasteDivertedKg: diverted,
+      recentActivity,
+    });
+  } catch (error) {
+    console.error('Failed to fetch recycling activity:', error);
+    res.status(500).json({ message: 'Failed to fetch recycling activity' });
   }
 });
 

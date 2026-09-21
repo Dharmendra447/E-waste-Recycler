@@ -34,7 +34,7 @@ export interface PickupTable {
   preferred_date: string | null;
   preferred_time: string | null;
   notes: string | null;
-  status: 'requested' | 'accepted' | 'scheduled' | 'collected' | 'recycled' | 'rejected' | 'pending' | 'completed' | 'cancelled';
+  status: 'requested' | 'accepted' | 'confirmed' | 'assigned' | 'scheduled' | 'collected' | 'processing' | 'recycled' | 'rejected' | 'pending' | 'completed' | 'cancelled';
   requested_at: ColumnType<string, string | undefined, string>;
   assigned_at: ColumnType<string, string | undefined, string> | null;
   scheduled_at: string | null;
@@ -52,8 +52,48 @@ export interface RewardHistoryTable {
   created_at: ColumnType<string, string | undefined, string>;
 }
 
+export interface DetectionHistoryTable {
+  id: Generated<number>;
+  user_id: number;
+  device_type: string;
+  category: string;
+  is_ewaste: number;
+  analyzed_at: ColumnType<string, string | undefined, string>;
+}
+
+export interface PickupStatusHistoryTable {
+  id: Generated<number>;
+  pickup_id: number;
+  status: string;
+  updated_by: number | null;
+  updated_at: ColumnType<string, string | undefined, string>;
+}
+
+export interface CampaignTable {
+  id: Generated<number>;
+  name: string;
+  target_kg: number;
+  start_date: string;
+  end_date: string;
+  created_by: number;
+  created_at: ColumnType<string, string | undefined, string>;
+}
+
+export interface CampaignParticipationTable {
+  id: Generated<number>;
+  campaign_id: number;
+  user_id: number;
+  pickup_id: number;
+  amount_kg: number;
+  created_at: ColumnType<string, string | undefined, string>;
+}
+
 export interface DB {
   users: UsersTable;
   pickups: PickupTable;
   reward_history: RewardHistoryTable;
+  detection_history: DetectionHistoryTable;
+  pickup_status_history: PickupStatusHistoryTable;
+  campaigns: CampaignTable;
+  campaign_participation: CampaignParticipationTable;
 }

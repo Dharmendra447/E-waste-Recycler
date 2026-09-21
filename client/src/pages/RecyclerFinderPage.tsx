@@ -19,6 +19,8 @@ export function RecyclerFinderPage() {
   const [selectedRecycler, setSelectedRecycler] = React.useState<Recycler | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [location, setLocation] = React.useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationLabel, setLocationLabel] = React.useState('');
+  const [isLocating, setIsLocating] = React.useState(false);
   const { toast } = useToast();
 
   const fetchRecyclers = React.useCallback(async () => {
@@ -38,15 +40,45 @@ export function RecyclerFinderPage() {
 
   React.useEffect(() => { fetchRecyclers(); }, [fetchRecyclers]);
 
+  const handleUseLocation = () => {
+    if (!navigator.geolocation) {
+      toast({ title: 'Location unavailable', description: 'Your browser does not support geolocation.', variant: 'destructive' });
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const nextLocation = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+      setLocation(nextLocation);
+      setLocationLabel(`Latitude: ${nextLocation.latitude.toFixed(5)}, Longitude: ${nextLocation.longitude.toFixed(5)}`);
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${nextLocation.latitude}&lon=${nextLocation.longitude}`);
+        if (response.ok) {
+          const data = await response.json() as { display_name?: string };
+          if (data.display_name) setLocationLabel(data.display_name);
+        }
+      } catch {
+        // Coordinates remain usable when reverse geocoding is unavailable.
+      } finally {
+        setIsLocating(false);
+        toast({ title: 'Location detected', description: 'Recycler distances and pickup location were updated.' });
+      }
+    }, (error) => {
+      const message = error.code === error.PERMISSION_DENIED ? 'Allow location permission to find nearby recyclers.' : error.code === error.TIMEOUT ? 'Location request timed out. Please try again.' : 'Your location could not be determined.';
+      setIsLocating(false);
+      toast({ title: 'Location unavailable', description: message, variant: 'destructive' });
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 });
+  };
+
   return (
     <div className="container mx-auto space-y-8 px-4 py-8">
       <div><h1 className="text-3xl font-bold">Find a Recycler</h1><p className="text-muted-foreground">Choose a local collection centre that accepts your e-waste.</p></div>
       <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
         <section className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row"><Input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Search by category, e.g. batteries" /><Button variant="outline" onClick={fetchRecyclers}>Search</Button><Button variant="outline" onClick={() => navigator.geolocation?.getCurrentPosition((position) => setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude }))}><LocateFixed className="mr-2 h-4 w-4" />Use my location</Button></div>
+          <div className="flex flex-col gap-2 sm:flex-row"><Input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Search by category, e.g. batteries" /><Button variant="outline" onClick={fetchRecyclers}>Search</Button><Button variant="outline" onClick={handleUseLocation} disabled={isLocating}><LocateFixed className="mr-2 h-4 w-4" />{isLocating ? 'Detecting...' : 'Use my location'}</Button></div>
+          {location && <p className="text-sm text-primary">Location detected: {locationLabel}</p>}
           {isLoading ? <p className="text-muted-foreground">Finding suitable recyclers...</p> : recyclers.length === 0 ? <Card><CardContent className="pt-6 text-muted-foreground">No active recyclers match this category.</CardContent></Card> : recyclers.map((recycler) => <Card key={recycler.id}><CardHeader><div className="flex items-start justify-between gap-4"><div><CardTitle>{recycler.name}</CardTitle><CardDescription className="mt-1"><MapPin className="mr-1 inline h-4 w-4" />{recycler.distanceKm === null || recycler.distanceKm === undefined ? 'Distance unavailable' : `${recycler.distanceKm} km away`} · {recycler.address || recycler.city || 'Location not provided'}</CardDescription></div><Badge variant="default">Active</Badge></div></CardHeader><CardContent className="space-y-3"><div className="flex flex-wrap gap-2 text-sm"><Badge variant="outline">Match: {recycler.matchScore || 0}%</Badge>{recycler.specialHandling && <Badge variant="outline">Special handling</Badge>}</div><div className="text-sm text-muted-foreground"><p><Recycle className="mr-1 inline h-4 w-4" />Accepts: {recycler.accepted_categories || 'Electronic waste'}</p><p><Phone className="mr-1 inline h-4 w-4" />{recycler.email}</p><p className="mt-1 text-xs">Match score uses category compatibility, hazard capability, and proximity where available.</p></div><Button onClick={() => setSelectedRecycler(recycler)}>Schedule pickup</Button></CardContent></Card>)}
         </section>
-        <aside>{selectedRecycler ? <PickupForm selectedRecycler={selectedRecycler} initialCategory={category} initialDeviceType={deviceType} initialCondition={condition} initialHazard={hazard} onPickupRequested={() => setSelectedRecycler(null)} /> : <Card><CardHeader><CardTitle>Ready to recycle?</CardTitle><CardDescription>Select a recycler to open the pickup request form.</CardDescription></CardHeader><CardContent><Button asChild className="w-full"><Link to="/dashboard">View your pickup history</Link></Button></CardContent></Card>}</aside>
+        <aside>{selectedRecycler ? <PickupForm selectedRecycler={selectedRecycler} initialCategory={category} initialDeviceType={deviceType} initialCondition={condition} initialHazard={hazard} initialAddress={locationLabel} initialLocation={location} onPickupRequested={() => setSelectedRecycler(null)} /> : <Card><CardHeader><CardTitle>Ready to recycle?</CardTitle><CardDescription>Select a recycler to open the pickup request form.</CardDescription></CardHeader><CardContent><Button asChild className="w-full"><Link to="/dashboard">View your pickup history</Link></Button></CardContent></Card>}</aside>
       </div>
     </div>
   );

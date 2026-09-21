@@ -16,12 +16,14 @@ interface PickupFormProps {
   initialDeviceType?: string;
   initialCondition?: string;
   initialHazard?: string;
+  initialAddress?: string;
+  initialLocation?: { latitude: number; longitude: number } | null;
 }
 
-export function PickupForm({ onPickupRequested, selectedRecycler, initialCategory = '', initialDeviceType = '', initialCondition = '', initialHazard = '' }: PickupFormProps) {
+export function PickupForm({ onPickupRequested, selectedRecycler, initialCategory = '', initialDeviceType = '', initialCondition = '', initialHazard = '', initialAddress = '', initialLocation = null }: PickupFormProps) {
   const { toast } = useToast();
   const { session, refreshSession } = useAuth();
-  const [address, setAddress] = React.useState('');
+  const [address, setAddress] = React.useState(initialAddress);
   const [itemsDescription, setItemsDescription] = React.useState('');
   const [category, setCategory] = React.useState(initialCategory);
   const [condition, setCondition] = React.useState(initialCondition);
@@ -31,8 +33,16 @@ export function PickupForm({ onPickupRequested, selectedRecycler, initialCategor
   const [preferredTime, setPreferredTime] = React.useState('');
   const [notes, setNotes] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [location, setLocation] = React.useState<{ latitude: number; longitude: number } | null>(null);
+  const [location, setLocation] = React.useState<{ latitude: number; longitude: number } | null>(initialLocation);
   const [isLocating, setIsLocating] = React.useState(false);
+
+  React.useEffect(() => {
+    if (initialAddress) setAddress(initialAddress);
+  }, [initialAddress]);
+
+  React.useEffect(() => {
+    if (initialLocation) setLocation(initialLocation);
+  }, [initialLocation]);
 
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
@@ -145,14 +155,14 @@ export function PickupForm({ onPickupRequested, selectedRecycler, initialCategor
             <div className="space-y-2">
               <Label htmlFor="address">Pickup Address</Label>
                <div className="flex items-center gap-2">
-                <Input id="address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="123 Main St, Anytown, USA" required />
+                <Input id="address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Enter pickup address or use your location" required />
                 <Button type="button" variant="outline" size="icon" onClick={handleGetLocation} disabled={isLocating} title="Get my current location">
                   <MapPin className="h-4 w-4" />
                   <span className="sr-only">Get my location</span>
                 </Button>
               </div>
               {isLocating && <p className="text-sm text-muted-foreground animate-pulse">Getting location...</p>}
-              {location && <p className="text-sm text-green-600">Location captured successfully!</p>}
+              {location && <p className="text-sm text-green-600">Location captured: {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="items">E-Waste Items</Label>
