@@ -216,10 +216,11 @@ export function AIDetectionPage() {
   };
 
   return (
-    <div className="container mx-auto max-w-2xl px-4 py-8">
-      <div className="mb-8 text-center">
-        <h2 className="text-3xl font-bold mb-2">AI E-Waste Detection</h2>
-        <p className="text-muted-foreground">
+    <div className="container mx-auto max-w-3xl space-y-6 px-4 py-8 sm:py-10">
+      <div className="max-w-2xl">
+        <p className="mb-2 text-sm font-semibold text-primary">Smart sorting</p>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">AI E-Waste Detection</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground sm:text-base">
           Upload an image of an electronic item to identify it using Gemini.
         </p>
       </div>
@@ -233,9 +234,11 @@ export function AIDetectionPage() {
             <div className="space-y-2">
               <Label htmlFor="ewaste-image" className="sr-only">E-Waste Image</Label>
               <div className="flex w-full items-center justify-center">
-                <label htmlFor="ewaste-image" className="flex h-64 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-card hover:bg-secondary/50">
+                <label htmlFor="ewaste-image" className="group flex min-h-56 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/30 px-4 text-center transition-colors hover:border-primary/40 hover:bg-primary/5 sm:h-64">
                     <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <UploadCloud className="mb-3 h-10 w-10 text-muted-foreground" />
+                        <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
+                          <UploadCloud className="h-6 w-6" />
+                        </span>
                         <p className="mb-2 text-sm text-muted-foreground"><span className="font-semibold text-primary">Click to upload</span> or drag and drop</p>
                         <p className="text-xs text-muted-foreground">PNG, JPG, or GIF</p>
                     </div>
@@ -246,8 +249,8 @@ export function AIDetectionPage() {
 
             {preview && (
               <div className="mt-4">
-                <p className="text-sm font-medium text-center mb-2">Image Preview:</p>
-                <img src={preview} alt="E-waste preview" className="mx-auto max-h-60 rounded-md shadow-md" />
+                <p className="mb-2 text-center text-sm font-medium">Image Preview</p>
+                <img src={preview} alt="E-waste preview" className="mx-auto max-h-60 max-w-full rounded-xl border border-border object-contain shadow-sm" />
               </div>
             )}
 

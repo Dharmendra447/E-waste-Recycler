@@ -22,29 +22,22 @@ async function migrate() {
       .addColumn('latitude', 'real')
       .addColumn('longitude', 'real')
       .addColumn('accepted_categories', 'text')
+      .addColumn('accepting_pickups', 'integer', (col) => col.notNull().defaultTo(1))
+      .addColumn('pickup_capacity', 'integer')
       .addColumn('active', 'integer', (col) => col.notNull().defaultTo(1))
+      .addColumn('buyback_enabled', 'integer', (col) => col.notNull().defaultTo(0))
+      .addColumn('is_demo', 'integer', (col) => col.notNull().defaultTo(0))
+      .addColumn('service_area', 'text')
+      .addColumn('demo_description', 'text')
       .execute();
     if (tableNames.has('users') && !columnsFor('users').has('accepted_categories')) await db.schema.alterTable('users').addColumn('accepted_categories', 'text').execute();
+    if (tableNames.has('users') && !columnsFor('users').has('accepting_pickups')) await db.schema.alterTable('users').addColumn('accepting_pickups', 'integer', (col) => col.notNull().defaultTo(1)).execute();
+    if (tableNames.has('users') && !columnsFor('users').has('pickup_capacity')) await db.schema.alterTable('users').addColumn('pickup_capacity', 'integer').execute();
     if (tableNames.has('users') && !columnsFor('users').has('active')) await db.schema.alterTable('users').addColumn('active', 'integer', (col) => col.notNull().defaultTo(1)).execute();
-    await db.updateTable('users')
-      .set({ accepted_categories: 'IT Equipment, Consumer Electronics, Batteries, Household Appliances, Special Handling' })
-      .where('role', '=', 'vendor')
-      .where('accepted_categories', 'is', null)
-      .execute();
-    await db.deleteFrom('users')
-      .where('role', '=', 'vendor')
-      .where((expression) => expression.or([
-        expression.and([
-          expression('name', '=', 'fdsas'),
-          expression('address', '=', 'fdsa'),
-        ]),
-        expression.and([
-          expression('name', '=', 'DD'),
-          expression('city', '=', 'Thane'),
-          expression('email', '=', 'DDD@123'),
-        ]),
-      ]))
-      .execute();
+    if (tableNames.has('users') && !columnsFor('users').has('buyback_enabled')) await db.schema.alterTable('users').addColumn('buyback_enabled', 'integer', (col) => col.notNull().defaultTo(0)).execute();
+    if (tableNames.has('users') && !columnsFor('users').has('is_demo')) await db.schema.alterTable('users').addColumn('is_demo', 'integer', (col) => col.notNull().defaultTo(0)).execute();
+    if (tableNames.has('users') && !columnsFor('users').has('service_area')) await db.schema.alterTable('users').addColumn('service_area', 'text').execute();
+    if (tableNames.has('users') && !columnsFor('users').has('demo_description')) await db.schema.alterTable('users').addColumn('demo_description', 'text').execute();
     console.log('Users table ready.');
 
     // Create the pickups table with foreign keys to the new users table
@@ -117,6 +110,104 @@ async function migrate() {
       .addColumn('status', 'text', (col) => col.notNull())
       .addColumn('updated_by', 'integer', (col) => col.references('users.id'))
       .addColumn('updated_at', 'text', (col) => col.notNull())
+      .execute();
+
+await db.schema
+      .createTable('pickup_verifications')
+      .ifNotExists()
+      .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+      .addColumn('pickup_id', 'integer', (col) => col.notNull().unique().references('pickups.id').onDelete('cascade'))
+      .addColumn('actual_device_type', 'text', (col) => col.notNull())
+      .addColumn('quantity', 'integer', (col) => col.notNull())
+      .addColumn('condition', 'text', (col) => col.notNull())
+      .addColumn('damage_notes', 'text')
+      .addColumn('photo_data', 'text')
+      .addColumn('photo_mime', 'text')
+      .addColumn('verified_by', 'integer', (col) => col.notNull().references('users.id'))
+      .addColumn('verified_at', 'text', (col) => col.notNull())
+      .execute();
+
+    await db.schema.createTable('buyback_offers')
+      .ifNotExists()
+      .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+      .addColumn('vendor_id', 'integer', (col) => col.notNull().references('users.id').onDelete('cascade'))
+      .addColumn('device_type', 'text', (col) => col.notNull())
+      .addColumn('condition', 'text', (col) => col.notNull())
+      .addColumn('minimum_price_inr', 'real', (col) => col.notNull().defaultTo(0))
+      .addColumn('maximum_price_inr', 'real', (col) => col.notNull().defaultTo(0))
+      .addColumn('amount_inr', 'real', (col) => col.notNull())
+      .addColumn('terms', 'text', (col) => col.notNull().defaultTo('Final price subject to device inspection and your approval.'))
+      .addColumn('pricing_unit', 'text', (col) => col.notNull())
+      .addColumn('active', 'integer', (col) => col.notNull().defaultTo(1))
+      .addColumn('created_at', 'text', (col) => col.notNull())
+      .addColumn('updated_at', 'text', (col) => col.notNull())
+      .execute();
+
+    await db.schema.createTable('buyback_requests')
+      .ifNotExists()
+      .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+      .addColumn('user_id', 'integer', (col) => col.notNull().references('users.id'))
+      .addColumn('vendor_id', 'integer', (col) => col.notNull().references('users.id'))
+      .addColumn('offer_id', 'integer', (col) => col.notNull().references('buyback_offers.id'))
+      .addColumn('device_type', 'text', (col) => col.notNull())
+      .addColumn('condition', 'text', (col) => col.notNull())
+      .addColumn('quantity', 'real', (col) => col.notNull())
+      .addColumn('pricing_unit', 'text', (col) => col.notNull())
+      .addColumn('quoted_unit_price', 'real', (col) => col.notNull())
+      .addColumn('quoted_minimum_price_inr', 'real', (col) => col.notNull().defaultTo(0))
+      .addColumn('quoted_maximum_price_inr', 'real', (col) => col.notNull().defaultTo(0))
+      .addColumn('quoted_terms', 'text', (col) => col.notNull().defaultTo('Final price subject to device inspection and your approval.'))
+      .addColumn('quoted_amount', 'real', (col) => col.notNull())
+      .addColumn('revised_amount', 'real')
+      .addColumn('final_agreed_amount', 'real')
+      .addColumn('inspected_condition', 'text')
+      .addColumn('inspection_notes', 'text')
+      .addColumn('status', 'text', (col) => col.notNull().defaultTo('requested'))
+      .addColumn('payment_status', 'text', (col) => col.notNull().defaultTo('unpaid'))
+      .addColumn('payment_method', 'text')
+      .addColumn('payment_reference', 'text')
+      .addColumn('created_at', 'text', (col) => col.notNull())
+      .addColumn('updated_at', 'text', (col) => col.notNull())
+      .addColumn('payment_confirmed_at', 'text')
+      .execute();
+
+    await db.schema.createTable('buyback_request_history')
+      .ifNotExists()
+      .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+      .addColumn('request_id', 'integer', (col) => col.notNull().references('buyback_requests.id').onDelete('cascade'))
+      .addColumn('status', 'text', (col) => col.notNull())
+      .addColumn('updated_by', 'integer', (col) => col.notNull().references('users.id'))
+      .addColumn('note', 'text')
+      .addColumn('updated_at', 'text', (col) => col.notNull())
+      .execute();
+
+    const migratedTables = await db.introspection.getTables();
+    const offerColumns = new Set(migratedTables.find((table) => table.name === 'buyback_offers')?.columns.map((column) => column.name) || []);
+    const requestColumns = new Set(migratedTables.find((table) => table.name === 'buyback_requests')?.columns.map((column) => column.name) || []);
+    if (!offerColumns.has('minimum_price_inr')) await db.schema.alterTable('buyback_offers').addColumn('minimum_price_inr', 'real', (col) => col.notNull().defaultTo(0)).execute();
+    if (!offerColumns.has('maximum_price_inr')) await db.schema.alterTable('buyback_offers').addColumn('maximum_price_inr', 'real', (col) => col.notNull().defaultTo(0)).execute();
+    if (!requestColumns.has('quoted_minimum_price_inr')) await db.schema.alterTable('buyback_requests').addColumn('quoted_minimum_price_inr', 'real', (col) => col.notNull().defaultTo(0)).execute();
+    if (!requestColumns.has('quoted_maximum_price_inr')) await db.schema.alterTable('buyback_requests').addColumn('quoted_maximum_price_inr', 'real', (col) => col.notNull().defaultTo(0)).execute();
+    if (!requestColumns.has('inspected_condition')) await db.schema.alterTable('buyback_requests').addColumn('inspected_condition', 'text').execute();
+    if (!requestColumns.has('inspection_notes')) await db.schema.alterTable('buyback_requests').addColumn('inspection_notes', 'text').execute();
+    if (!requestColumns.has('payment_method')) await db.schema.alterTable('buyback_requests').addColumn('payment_method', 'text').execute();
+    if (!requestColumns.has('payment_reference')) await db.schema.alterTable('buyback_requests').addColumn('payment_reference', 'text').execute();
+
+    await db.updateTable('buyback_offers')
+      .set((eb) => ({
+        minimum_price_inr: eb.ref('amount_inr'),
+        maximum_price_inr: eb.ref('amount_inr'),
+      }))
+      .where('minimum_price_inr', '=', 0)
+      .where('maximum_price_inr', '=', 0)
+      .execute();
+    await db.updateTable('buyback_requests')
+      .set((eb) => ({
+        quoted_minimum_price_inr: eb.ref('quoted_unit_price'),
+        quoted_maximum_price_inr: eb.ref('quoted_unit_price'),
+      }))
+      .where('quoted_minimum_price_inr', '=', 0)
+      .where('quoted_maximum_price_inr', '=', 0)
       .execute();
 
     if (!tableNames.has('campaigns')) await db.schema

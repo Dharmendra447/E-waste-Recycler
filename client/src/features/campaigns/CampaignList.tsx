@@ -39,11 +39,35 @@ export function CampaignList() {
   };
 
   const recycledPickups = pickups.filter((pickup) => pickup.status === 'recycled');
-  if (campaigns.length === 0) return <Card><CardContent className="pt-6 text-muted-foreground">No active collection campaigns yet.</CardContent></Card>;
+  if (campaigns.length === 0) return <Card><CardContent className="p-5 text-sm text-muted-foreground">No active collection campaigns yet.</CardContent></Card>;
 
-  return <div className="grid gap-4 md:grid-cols-2">{campaigns.map((campaign) => {
+  return <div className="grid gap-4 lg:grid-cols-2">{campaigns.map((campaign) => {
     const alreadyJoined = new Set(campaign.joinedPickupIds);
     const availablePickups = recycledPickups.filter((pickup) => !alreadyJoined.has(pickup.id));
-    return <Card key={campaign.id}><CardHeader><CardTitle>{campaign.name}</CardTitle><CardDescription>{campaign.start_date} to {campaign.end_date}</CardDescription></CardHeader><CardContent className="space-y-3"><div className="flex justify-between text-sm"><span>Collected: {campaign.collectedKg} kg</span><span>Goal: {campaign.target_kg} kg</span></div><Progress value={campaign.progressPercent} /><p className="text-sm text-muted-foreground">{campaign.participants} participant{campaign.participants === 1 ? '' : 's'} · {campaign.progressPercent}% complete</p>{availablePickups.length > 0 ? <div className="space-y-2"><Select value={selectedPickup[campaign.id] || ''} onValueChange={(value) => setSelectedPickup((current) => ({ ...current, [campaign.id]: value }))}><SelectTrigger><SelectValue placeholder="Select a recycled pickup" /></SelectTrigger><SelectContent>{availablePickups.map((pickup) => <SelectItem key={pickup.id} value={String(pickup.id)}>{pickup.items_description}</SelectItem>)}</SelectContent></Select><Button className="w-full" onClick={() => participate(campaign.id)} disabled={!selectedPickup[campaign.id]}>Participate</Button></div> : <p className="text-sm text-muted-foreground">Recycle an item through your pickup history to participate.</p>}</CardContent></Card>;
+    return (
+      <Card key={campaign.id} className="flex h-full flex-col">
+        <CardHeader>
+          <CardTitle>{campaign.name}</CardTitle>
+          <CardDescription>{campaign.start_date} to {campaign.end_date}</CardDescription>
+        </CardHeader>
+        <CardContent className="mt-auto space-y-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+            <span className="font-semibold">{campaign.collectedKg} kg <span className="font-normal text-muted-foreground">collected</span></span>
+            <span className="text-muted-foreground">Goal: {campaign.target_kg} kg</span>
+          </div>
+          <Progress value={campaign.progressPercent} />
+          <p className="text-sm text-muted-foreground">{campaign.participants} participant{campaign.participants === 1 ? '' : 's'} · {campaign.progressPercent}% complete</p>
+          {availablePickups.length > 0 ? (
+            <div className="space-y-2 border-t border-border pt-4">
+              <Select value={selectedPickup[campaign.id] || ''} onValueChange={(value) => setSelectedPickup((current) => ({ ...current, [campaign.id]: value }))}>
+                <SelectTrigger><SelectValue placeholder="Select a recycled pickup" /></SelectTrigger>
+                <SelectContent>{availablePickups.map((pickup) => <SelectItem key={pickup.id} value={String(pickup.id)}>{pickup.items_description}</SelectItem>)}</SelectContent>
+              </Select>
+              <Button className="w-full" onClick={() => participate(campaign.id)} disabled={!selectedPickup[campaign.id]}>Participate</Button>
+            </div>
+          ) : <p className="border-t border-border pt-4 text-sm text-muted-foreground">Recycle an item through your pickup history to participate.</p>}
+        </CardContent>
+      </Card>
+    );
   })}</div>;
 }

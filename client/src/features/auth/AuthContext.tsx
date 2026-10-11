@@ -6,7 +6,6 @@ interface UserSession {
   name: string;
   email: string;
   role: 'user' | 'vendor' | 'admin';
-  points?: number;
   city?: string;
 }
 

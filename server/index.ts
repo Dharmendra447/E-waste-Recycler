@@ -8,10 +8,13 @@ import multer from 'multer';
 
 import { setupStaticServing } from './static-serve.js';
 import { db } from './db.js';
+import { createCapacityCheckedPickup, getActiveQuantity, VendorPickupError, vendorFeaturesRouter } from './vendor-features.js';
 import { createAuthMiddleware, AuthRequest } from './auth.js';
+import { supportsRecyclerCategory } from './recycler-matching.js';
 import { analyzeEWasteImage } from './ai-detection.js';
 import { generateRecyclingAdvice } from './recycling-advice.js';
 import { getSmartRecyclingRecommendation } from './smart-recycling.js';
+import { buybackRouter } from './buyback.js';
 
 // Load root settings first, then preserve the existing client Gemini configuration.
 dotenv.config({ path: '.env' });
@@ -22,14 +25,6 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key';
 const ECOAI_RAG_SERVICE_URL = process.env.ECOAI_RAG_SERVICE_URL || 'http://127.0.0.1:8000';
-
-const POINTS_BY_CATEGORY: Record<string, number> = {
-  'IT Equipment': 40,
-  'Consumer Electronics': 30,
-  'Household Appliances': 50,
-  Batteries: 25,
-  'Electrical Component': 20,
-};
 
 const IMPACT_BY_CATEGORY: Record<string, { landfillKg: number; co2Kg: number }> = {
   'IT Equipment': { landfillKg: 8, co2Kg: 12 },
@@ -140,7 +135,7 @@ app.post('/api/register', async (req, res) => {
         longitude: role === 'vendor' ? (longitude || 0) : null,
         accepted_categories: null,
       })
-      .returning(['id', 'name', 'email', 'points', 'role', 'city'])
+      .returning(['id', 'name', 'email', 'role', 'city'])
       .executeTakeFirstOrThrow();
 
     const token = jwt.sign(
@@ -192,8 +187,13 @@ app.post('/api/login', async (req, res) => {
       sameSite: 'lax',
     });
 
-    const { password_hash, ...userWithoutPassword } = user;
-    res.status(200).json(userWithoutPassword);
+    res.status(200).json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      city: user.city,
+    });
   } catch (err) {
     console.error('Failed to login:', err);
     res.status(500).json({ message: 'Failed to login' });
@@ -212,7 +212,7 @@ app.get('/api/me', authenticateToken, async (req: AuthRequest, res) => {
     const user = await db
       .selectFrom('users')
       .where('id', '=', req.userId)
-      .select(['id', 'name', 'email', 'points', 'role', 'city', 'address'])
+      .select(['id', 'name', 'email', 'role', 'city', 'address'])
       .executeTakeFirst();
 
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -327,25 +327,39 @@ app.get('/api/recyclers', authenticateToken, async (req: AuthRequest, res) => {
   if (req.userRole !== 'user') return res.status(403).json({ message: 'Only users can find recyclers.' });
 
   const search = typeof req.query.category === 'string' ? req.query.category.trim().toLowerCase() : '';
+  const requestedCity = typeof req.query.city === 'string' ? req.query.city.trim().toLowerCase() : '';
   const hazardRequested = typeof req.query.hazard === 'string' && /battery|batteries|leak|swollen|chemical|fire|hazard|special/i.test(req.query.hazard);
   const latitude = Number(req.query.latitude);
   const longitude = Number(req.query.longitude);
   try {
-    const recyclers = await db.selectFrom('users')
+      const candidates = await db.selectFrom('users')
       .where('role', '=', 'vendor')
       .where('active', '=', 1)
-      .select(['id', 'name', 'email', 'city', 'address', 'latitude', 'longitude', 'accepted_categories', 'active'])
+      .where('accepting_pickups', '=', 1)
+      .select(['id', 'name', 'email', 'city', 'address', 'latitude', 'longitude', 'accepted_categories', 'active', 'pickup_capacity', 'is_demo', 'service_area', 'demo_description'])
       .execute();
+      const candidatesWithAvailability = await Promise.all(candidates.map(async (recycler) => ({
+        ...recycler,
+        active_quantity: await getActiveQuantity(db, recycler.id),
+      })));
+      const recyclers = candidatesWithAvailability.filter((recycler) => {
+        const categories = recycler.accepted_categories || '';
+        if (search && !supportsRecyclerCategory(categories, search)) return false;
+        return recycler.pickup_capacity === null || recycler.active_quantity < recycler.pickup_capacity;
+      });
     const ranked = recyclers.map((recycler) => {
       const accepted = (recycler.accepted_categories || '').toLowerCase();
-      const categoryMatch = !search ? 20 : accepted.includes(search) ? 40 : 0;
+      const categoryMatch = !search ? 20 : supportsRecyclerCategory(accepted, search) ? 40 : 0;
       const handlesHazard = /battery|batteries|special|hazard|safe handling/.test(accepted);
       const hazardMatch = hazardRequested ? (handlesHazard ? 30 : 0) : 30;
-      const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude) && latitude !== 0 && longitude !== 0 && recycler.latitude !== null && recycler.longitude !== null && recycler.latitude !== 0 && recycler.longitude !== 0;
+      const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 && (latitude !== 0 || longitude !== 0) && recycler.latitude !== null && recycler.longitude !== null && Math.abs(recycler.latitude) <= 90 && Math.abs(recycler.longitude) <= 180 && (recycler.latitude !== 0 || recycler.longitude !== 0);
       const distance = hasLocation ? haversineDistanceKm(latitude, longitude, recycler.latitude!, recycler.longitude!) : null;
       const proximity = distance === null ? 10 : Math.max(0, Math.round(30 - Math.min(distance, 30)));
-      return { ...recycler, distanceKm: distance === null ? null : Number(distance.toFixed(1)), matchScore: Math.min(100, categoryMatch + hazardMatch + proximity), specialHandling: handlesHazard };
+      const serviceArea = recycler.service_area || recycler.city;
+      const locationMatch = Boolean(requestedCity && serviceArea && serviceArea.trim().toLowerCase() === requestedCity);
+      return { ...recycler, service_area: serviceArea, distanceKm: distance === null ? null : Number(distance.toFixed(1)), matchScore: Math.min(100, categoryMatch + hazardMatch + proximity), specialHandling: handlesHazard, locationMatch };
     }).sort((left, right) => {
+      if (requestedCity && left.locationMatch !== right.locationMatch) return left.locationMatch ? -1 : 1;
       const hasUserLocation = Number.isFinite(latitude) && Number.isFinite(longitude) && latitude !== 0 && longitude !== 0;
       if (hasUserLocation) {
         if (left.distanceKm !== null && right.distanceKm !== null) return left.distanceKm - right.distanceKm;
@@ -387,55 +401,84 @@ app.get('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
 app.post('/api/pickups', authenticateToken, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
 
-  const { address, items_description, latitude, longitude, category, condition, hazard, quantity, preferred_date, preferred_time, vendor_id, notes } = req.body;
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return res.status(400).json({ message: 'Pickup details must be submitted as a JSON object.' });
+  }
 
-  if (!address || !items_description || !category || !preferred_date || !preferred_time || !vendor_id)
-    return res.status(400).json({ message: 'Recycler, address, item category, preferred date, and preferred time are required.' });
+  const { address, items_description, latitude, longitude, category, condition, hazard, quantity, preferred_date, preferred_time, vendor_id, notes } = body;
+  if (typeof address !== 'string' || !address.trim()) {
+    return res.status(400).json({ message: 'Enter a pickup address.' });
+  }
+  if (typeof items_description !== 'string' || !items_description.trim()) {
+    return res.status(400).json({ message: 'Describe the e-waste items for collection.' });
+  }
+  if (typeof category !== 'string' || !category.trim()) {
+    return res.status(400).json({ message: 'Enter an e-waste category.' });
+  }
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10000) {
+    return res.status(400).json({ message: 'Quantity must be a whole number between 1 and 10000.' });
+  }
+  if (typeof preferred_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(preferred_date)
+    || Number.isNaN(Date.parse(`${preferred_date}T00:00:00.000Z`))
+    || new Date(`${preferred_date}T00:00:00.000Z`).toISOString().slice(0, 10) !== preferred_date) {
+    return res.status(400).json({ message: 'Choose a valid preferred pickup date.' });
+  }
+  if (typeof preferred_time !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(preferred_time)) {
+    return res.status(400).json({ message: 'Choose a valid preferred pickup time.' });
+  }
+  if (!Number.isSafeInteger(vendor_id) || vendor_id < 1) {
+    return res.status(400).json({ message: 'Select a valid recycler.' });
+  }
+  const hasLatitude = latitude !== undefined && latitude !== null;
+  const hasLongitude = longitude !== undefined && longitude !== null;
+  if (hasLatitude !== hasLongitude
+    || (hasLatitude && (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90))
+    || (hasLongitude && (typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180))) {
+    return res.status(400).json({ message: 'Pickup coordinates must include a valid latitude and longitude.' });
+  }
+  if (condition !== undefined && condition !== null && typeof condition !== 'string') {
+    return res.status(400).json({ message: 'Condition must be text.' });
+  }
+  if (hazard !== undefined && hazard !== null && typeof hazard !== 'string') {
+    return res.status(400).json({ message: 'Hazard information must be text.' });
+  }
+  if (notes !== undefined && notes !== null && typeof notes !== 'string') {
+    return res.status(400).json({ message: 'Pickup notes must be text.' });
+  }
 
   try {
-    const recycler = await db.selectFrom('users').where('id', '=', Number(vendor_id)).where('role', '=', 'vendor').where('active', '=', 1).select(['id']).executeTakeFirst();
-    if (!recycler) return res.status(400).json({ message: 'The selected recycler is unavailable.' });
     const user = await db
       .selectFrom('users')
       .where('id', '=', req.userId)
       .select(['name', 'email'])
       .executeTakeFirstOrThrow();
 
-    const newPickup = await db
-      .insertInto('pickups')
-      .values({
-        user_id: req.userId,
-        name: user.name,
-        email: user.email,
-        address,
-        items_description,
-        latitude,
-        longitude,
-        category: category || null,
-        condition: condition || null,
-        hazard: hazard || null,
-        quantity: Math.max(1, Number(quantity) || 1),
-        preferred_date: preferred_date || null,
-        preferred_time: preferred_time || null,
-        notes: notes || null,
-        vendor_id: vendor_id ? Number(vendor_id) : null,
-        status: 'requested',
-        requested_at: new Date().toISOString(),
-        assigned_at: null,
-        scheduled_at: null,
-        collected_at: null,
-        recycled_at: null,
-        points_awarded: 0,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    await db.insertInto('pickup_status_history').values({ pickup_id: newPickup.id, status: 'requested', updated_by: req.userId, updated_at: newPickup.requested_at }).execute();
+    const newPickup = await createCapacityCheckedPickup({
+      userId: req.userId,
+      name: user.name,
+      email: user.email,
+      address: address.trim(),
+      items_description: items_description.trim(),
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
+      category: category.trim(),
+      condition: typeof condition === 'string' && condition.trim() ? condition.trim() : null,
+      hazard: typeof hazard === 'string' && hazard.trim() ? hazard.trim() : null,
+      quantity,
+      preferred_date,
+      preferred_time,
+      notes: typeof notes === 'string' && notes.trim() ? notes.trim() : null,
+      vendorId: vendor_id,
+    });
 
     res.status(201).json(newPickup);
   } catch (err) {
-    console.error('Failed to create pickup', err);
-    res.status(500).json({ message: 'Failed to create pickup' });
+    if (err instanceof VendorPickupError) {
+      return res.status(err.status).json({ message: err.message });
+    }
+    console.error('Pickup creation failed', err);
+    res.status(500).json({ message: 'Pickup request could not be saved. Please try again.' });
   }
 });
 
@@ -516,6 +559,9 @@ app.put('/api/pickups/:id/status', authenticateToken, async (req: AuthRequest, r
     if (!validNextStatuses[currentStatus]?.includes(nextStatus)) {
       return res.status(409).json({ message: `Invalid status transition from ${currentStatus} to ${nextStatus}.` });
     }
+    if (req.userRole === 'vendor' && nextStatus === 'collected') {
+      return res.status(409).json({ message: 'Complete the pickup verification form to mark this pickup collected.' });
+    }
 
     const now = new Date().toISOString();
     const updatedPickup = await db.transaction().execute(async (trx) => {
@@ -530,13 +576,6 @@ app.put('/api/pickups/:id/status', authenticateToken, async (req: AuthRequest, r
       let updated = await trx.updateTable('pickups').set(updateValues).where('id', '=', pickupId).returningAll().executeTakeFirstOrThrow();
       await trx.insertInto('pickup_status_history').values({ pickup_id: pickupId, status: nextStatus, updated_by: req.userId, updated_at: now }).execute();
 
-      if (nextStatus === 'recycled' && pickup.points_awarded === 0) {
-        const points = (POINTS_BY_CATEGORY[categoryValue(pickup.category)] || 20) * Math.max(1, pickup.quantity);
-        await trx.updateTable('users').set((eb) => ({ points: eb('points', '+', points) })).where('id', '=', pickup.user_id).execute();
-        await trx.updateTable('pickups').set({ points_awarded: points }).where('id', '=', pickupId).execute();
-        await trx.insertInto('reward_history').values({ user_id: pickup.user_id, pickup_id: pickupId, points, reason: `Recycled ${categoryValue(pickup.category)}`, created_at: now }).execute();
-        updated = await trx.selectFrom('pickups').where('id', '=', pickupId).selectAll().executeTakeFirstOrThrow();
-      }
       return updated;
     });
 
@@ -620,12 +659,12 @@ app.post('/api/admin/campaigns', authenticateToken, async (req: AuthRequest, res
 app.get('/api/impact', authenticateToken, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
   try {
-    const pickups = await db.selectFrom('pickups').where('user_id', '=', req.userId).where('status', '=', 'recycled').select(['category', 'quantity', 'points_awarded']).execute();
+    const pickups = await db.selectFrom('pickups').where('user_id', '=', req.userId).where('status', '=', 'recycled').select(['category', 'quantity']).execute();
     const impact = pickups.reduce((total, pickup) => {
       const values = categoryImpact(categoryValue(pickup.category));
       const quantity = Math.max(1, pickup.quantity);
-      return { devices: total.devices + quantity, landfillKg: total.landfillKg + values.landfillKg * quantity, co2Kg: total.co2Kg + values.co2Kg * quantity, points: total.points + (pickup.points_awarded || 0) };
-    }, { devices: 0, landfillKg: 0, co2Kg: 0, points: 0 });
+      return { devices: total.devices + quantity, landfillKg: total.landfillKg + values.landfillKg * quantity, co2Kg: total.co2Kg + values.co2Kg * quantity };
+    }, { devices: 0, landfillKg: 0, co2Kg: 0 });
     res.json({ ...impact, completedPickups: pickups.length });
   } catch {
     res.status(500).json({ message: 'Failed to calculate eco impact' });
@@ -635,8 +674,7 @@ app.get('/api/impact', authenticateToken, async (req: AuthRequest, res) => {
 app.get('/api/activity', authenticateToken, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
   try {
-    const [user, pickups, detections] = await Promise.all([
-      db.selectFrom('users').where('id', '=', req.userId).select(['points']).executeTakeFirstOrThrow(),
+    const [pickups, detections] = await Promise.all([
       db.selectFrom('pickups').where('user_id', '=', req.userId).select(['items_description', 'category', 'quantity', 'status', 'requested_at', 'recycled_at']).orderBy('requested_at', 'desc').execute(),
       db.selectFrom('detection_history').where('user_id', '=', req.userId).selectAll().orderBy('analyzed_at', 'desc').execute(),
     ]);
@@ -654,23 +692,12 @@ app.get('/api/activity', authenticateToken, async (req: AuthRequest, res) => {
       devicesAnalyzed: detections.length,
       pickupsRequested: pickups.length,
       itemsRecycled: recycledPickups.reduce((total, pickup) => total + Math.max(1, pickup.quantity || 1), 0),
-      rewardPoints: user.points,
       estimatedEwasteDivertedKg: diverted,
       recentActivity,
     });
   } catch (error) {
     console.error('Failed to fetch recycling activity:', error);
     res.status(500).json({ message: 'Failed to fetch recycling activity' });
-  }
-});
-
-app.get('/api/rewards', authenticateToken, async (req: AuthRequest, res) => {
-  if (!req.userId) return res.status(401).json({ message: 'Unauthorized' });
-  try {
-    const rewards = await db.selectFrom('reward_history').where('user_id', '=', req.userId).selectAll().orderBy('created_at', 'desc').execute();
-    res.json(rewards);
-  } catch {
-    res.status(500).json({ message: 'Failed to fetch reward history' });
   }
 });
 
@@ -710,6 +737,9 @@ app.get('/api/admin/overview', authenticateToken, async (req: AuthRequest, res) 
 });
 
 // --- START SERVER ---
+app.use('/api', authenticateToken, buybackRouter);
+app.use('/api/vendor', authenticateToken, vendorFeaturesRouter);
+
 export async function startServer(port: number) {
   try {
     if (process.env.NODE_ENV === 'production') {

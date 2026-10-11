@@ -6,7 +6,7 @@ export interface UsersTable {
   email: string;
   password_hash: string;
   role: 'user' | 'vendor' | 'admin';
-  points: ColumnType<number, number | undefined, number>;
+  points?: ColumnType<number, number | undefined, number>;
   
   // Vendor-specific fields (nullable)
   city: string | null;
@@ -14,7 +14,13 @@ export interface UsersTable {
   latitude: number | null;
   longitude: number | null;
   accepted_categories: string | null;
+  accepting_pickups: ColumnType<number, number | undefined, number>;
+  pickup_capacity: ColumnType<number | null, number | null | undefined, number | null>;
   active: number;
+  buyback_enabled: ColumnType<number, number | undefined, number>;
+  is_demo: ColumnType<number, number | undefined, number>;
+  service_area: string | null;
+  demo_description: string | null;
 }
 
 export interface PickupTable {
@@ -40,10 +46,10 @@ export interface PickupTable {
   scheduled_at: string | null;
   collected_at: string | null;
   recycled_at: string | null;
-  points_awarded: number;
+  points_awarded?: number;
 }
 
-export interface RewardHistoryTable {
+export interface HistoricalRewardHistoryTable {
   id: Generated<number>;
   user_id: number;
   pickup_id: number;
@@ -61,11 +67,75 @@ export interface DetectionHistoryTable {
   analyzed_at: ColumnType<string, string | undefined, string>;
 }
 
+export interface PickupVerificationTable {
+  id: Generated<number>;
+  pickup_id: number;
+  actual_device_type: string;
+  quantity: number;
+  condition: 'working' | 'partially_working' | 'damaged' | 'non_functional';
+  damage_notes: string | null;
+  photo_data: string | null;
+  photo_mime: string | null;
+  verified_by: number;
+  verified_at: ColumnType<string, string | undefined, string>;
+}
+
 export interface PickupStatusHistoryTable {
   id: Generated<number>;
   pickup_id: number;
   status: string;
   updated_by: number | null;
+  updated_at: ColumnType<string, string | undefined, string>;
+}
+
+export interface BuybackOfferTable {
+  id: Generated<number>;
+  vendor_id: number;
+  device_type: string;
+  condition: 'working' | 'repairable' | 'damaged' | 'scrap';
+  minimum_price_inr: number;
+  maximum_price_inr: number;
+  amount_inr: number;
+  terms: string;
+  pricing_unit: 'per_device' | 'per_kg';
+  active: ColumnType<number, number | undefined, number>;
+  created_at: ColumnType<string, string | undefined, string>;
+  updated_at: ColumnType<string, string | undefined, string>;
+}
+
+export interface BuybackRequestTable {
+  id: Generated<number>;
+  user_id: number;
+  vendor_id: number;
+  offer_id: number;
+  device_type: string;
+  condition: 'working' | 'repairable' | 'damaged' | 'scrap';
+  quantity: number;
+  pricing_unit: 'per_device' | 'per_kg';
+  quoted_unit_price: number;
+  quoted_minimum_price_inr: number;
+  quoted_maximum_price_inr: number;
+  quoted_terms: string;
+  quoted_amount: number;
+  revised_amount: number | null;
+  final_agreed_amount: number | null;
+  inspected_condition: 'working' | 'repairable' | 'damaged' | 'scrap' | null;
+  inspection_notes: string | null;
+  status: 'requested' | 'offer_confirmed' | 'inspection_pending' | 'revised_offer' | 'price_accepted' | 'collected' | 'payment_pending' | 'paid' | 'rejected';
+  payment_status: 'unpaid' | 'pending' | 'paid';
+  payment_method: 'cash' | 'upi' | 'bank_transfer' | 'other' | null;
+  payment_reference: string | null;
+  created_at: ColumnType<string, string | undefined, string>;
+  updated_at: ColumnType<string, string | undefined, string>;
+  payment_confirmed_at: string | null;
+}
+
+export interface BuybackRequestHistoryTable {
+  id: Generated<number>;
+  request_id: number;
+  status: string;
+  updated_by: number;
+  note: string | null;
   updated_at: ColumnType<string, string | undefined, string>;
 }
 
@@ -91,9 +161,13 @@ export interface CampaignParticipationTable {
 export interface DB {
   users: UsersTable;
   pickups: PickupTable;
-  reward_history: RewardHistoryTable;
+  reward_history: HistoricalRewardHistoryTable;
   detection_history: DetectionHistoryTable;
   pickup_status_history: PickupStatusHistoryTable;
+  pickup_verifications: PickupVerificationTable;
+  buyback_offers: BuybackOfferTable;
+  buyback_requests: BuybackRequestTable;
+  buyback_request_history: BuybackRequestHistoryTable;
   campaigns: CampaignTable;
   campaign_participation: CampaignParticipationTable;
 }

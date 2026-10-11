@@ -5,13 +5,15 @@ import { Recycle } from 'lucide-react';
 
 export function SignupPage() {
   return (
-    <div className="container mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-16">
+    <div className="container mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 sm:py-16">
         <div className="w-full max-w-md">
             <div className="mb-8 text-center">
-                <Recycle className="mx-auto mb-2 h-10 w-10 text-primary" />
-                <h2 className="text-3xl font-bold tracking-tight">Create an Account</h2>
-                <p className="text-muted-foreground">
-                    Join us and start earning rewards for recycling!
+                <span className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Recycle className="h-6 w-6" />
+                </span>
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Create an Account</h1>
+                <p className="mt-2 text-sm text-muted-foreground sm:text-base">
+                    Join us to compare buyback offers and arrange responsible recycling pickups.
                 </p>
             </div>
             <SignupForm />

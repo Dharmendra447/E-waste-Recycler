@@ -154,10 +154,11 @@ export function EcoAIAdvisorPage() {
   };
 
   return (
-    <div className="container mx-auto max-w-2xl px-4 py-8">
-      <div className="mb-8 text-center">
-        <h2 className="mb-2 text-3xl font-bold">EcoAI Advisor</h2>
-        <p className="text-muted-foreground">Ask questions about safe e-waste handling and recycling.</p>
+    <div className="container mx-auto max-w-3xl space-y-6 px-4 py-8 sm:py-10">
+      <div className="max-w-2xl">
+        <p className="mb-2 text-sm font-semibold text-primary">Your recycling companion</p>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">EcoAI Advisor</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground sm:text-base">Ask questions about safe e-waste handling and recycling.</p>
       </div>
 
       <Card>
@@ -183,13 +184,13 @@ export function EcoAIAdvisorPage() {
           </form>
 
           {answer && (
-            <div className="mt-6 space-y-5 rounded-md border border-primary/20 bg-primary/5 p-4">
+            <div className="mt-6 space-y-5 rounded-xl border border-primary/20 bg-primary/[0.04] p-4 sm:p-6">
               <div>
                 <div className="flex items-center gap-2">
                   <BookOpen className="h-4 w-4 text-primary" />
                   <h3 className="font-semibold text-primary">AI Answer</h3>
                 </div>
-                <div className="mt-3 space-y-3 text-primary/90">
+                <div className="mt-3 space-y-3 break-words text-sm leading-6 text-foreground/90 sm:text-base">
                   {formatAnswer(sanitizeAnswerText(answer.answer)).map((block, index) => {
                     if (block.type === 'heading') {
                       return <h4 key={`${block.text}-${index}`} className="font-semibold text-primary">{block.text}</h4>;

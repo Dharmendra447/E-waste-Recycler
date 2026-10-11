@@ -2,6 +2,7 @@ node_modules
 node_modules/
 .env
 client/.env
+demo-credentials.local.json
 dist/
 .vite/
 rag/embeddings/*.faiss

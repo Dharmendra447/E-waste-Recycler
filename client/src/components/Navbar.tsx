@@ -1,56 +1,77 @@
 import * as React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/features/auth/AuthContext';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Recycle, LogOut } from 'lucide-react';
+import { useAuth } from '@/features/auth/AuthContext';
 
 export function Navbar() {
   const { session, logout, isLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = async () => {
     await logout();
     navigate('/');
   };
 
+  const navButtonClass = (path: string) => (
+    `h-9 px-2 text-xs sm:px-3 sm:text-sm ${location.pathname === path ? 'bg-primary/10 font-semibold text-primary hover:bg-primary/15 hover:text-primary' : 'text-muted-foreground'}`
+  );
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        <Link to="/" className="flex items-center gap-2 font-bold text-primary">
-          <Recycle className="h-6 w-6" />
-          <span className="hidden font-bold sm:inline-block">
-            E-Waste Recycler
+    <header className="sticky top-0 z-50 w-full border-b border-border/80 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90">
+      <div className="container mx-auto flex min-h-16 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
+        <Link to="/" className="flex shrink-0 items-center gap-2 font-bold tracking-tight text-primary">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+            <Recycle className="h-5 w-5" />
           </span>
+          <span className="text-sm sm:text-base">E-Waste Recycler</span>
         </Link>
-        <nav className="flex items-center gap-2">
+        <nav aria-label="Main navigation" className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1">
           {isLoading ? (
-            <div className="h-8 w-24 animate-pulse rounded-md bg-muted"></div>
+            <div className="h-8 w-24 animate-pulse rounded-md bg-muted" aria-label="Loading navigation" />
           ) : session ? (
             <>
-              <span className="hidden sm:inline text-sm text-muted-foreground">Welcome, {session.name}!</span>
+              <span className="hidden text-sm text-muted-foreground lg:inline">Welcome, {session.name}</span>
               {session.role === 'user' && (
-                <div className="hidden sm:flex items-center gap-2 bg-secondary text-secondary-foreground rounded-full px-3 py-1 text-sm font-semibold">
-                  <span>Points:</span>
-                  <span className="text-primary">{session.points}</span>
-                </div>
+                <>
+                  <Button asChild variant="ghost" className={navButtonClass('/dashboard')}>
+                    <Link to="/dashboard" aria-current={location.pathname === '/dashboard' ? 'page' : undefined}>Dashboard</Link>
+                  </Button>
+                  <Button asChild variant="ghost" className={navButtonClass('/ai-detection')}>
+                    <Link to="/ai-detection" aria-current={location.pathname === '/ai-detection' ? 'page' : undefined}>AI Detection</Link>
+                  </Button>
+                  <Button asChild variant="ghost" className={navButtonClass('/ecoai-advisor')}>
+                    <Link to="/ecoai-advisor" aria-current={location.pathname === '/ecoai-advisor' ? 'page' : undefined}>EcoAI Advisor</Link>
+                  </Button>
+                  <Button asChild variant="ghost" className={navButtonClass('/find-recycler')}>
+                    <Link to="/find-recycler" aria-current={location.pathname === '/find-recycler' ? 'page' : undefined}>Find Recycler</Link>
+                  </Button>
+                </>
               )}
-              
-              {session.role === 'user' && <Link to="/dashboard"><Button variant="ghost">Dashboard</Button></Link>}
-              {session.role === 'user' && <Link to="/ai-detection"><Button variant="ghost">AI Detection</Button></Link>}
-              {session.role === 'user' && <Link to="/ecoai-advisor"><Button variant="ghost">EcoAI Advisor</Button></Link>}
-              {session.role === 'user' && <Link to="/find-recycler"><Button variant="ghost">Find Recycler</Button></Link>}
-              {session.role === 'vendor' && <Link to="/vendor/dashboard"><Button variant="ghost">Dashboard</Button></Link>}
-              {session.role === 'admin' && <Link to="/admin/dashboard"><Button variant="ghost">Admin Panel</Button></Link>}
-              
-              <Button onClick={handleLogout} variant="ghost" size="icon" title="Logout">
-                  <LogOut className="h-5 w-5" />
-                  <span className="sr-only">Logout</span>
+              {session.role === 'vendor' && (
+                <Button asChild variant="ghost" className={navButtonClass('/vendor/dashboard')}>
+                  <Link to="/vendor/dashboard" aria-current={location.pathname === '/vendor/dashboard' ? 'page' : undefined}>Dashboard</Link>
+                </Button>
+              )}
+              {session.role === 'admin' && (
+                <Button asChild variant="ghost" className={navButtonClass('/admin/dashboard')}>
+                  <Link to="/admin/dashboard" aria-current={location.pathname === '/admin/dashboard' ? 'page' : undefined}>Admin Panel</Link>
+                </Button>
+              )}
+
+              <Button onClick={handleLogout} variant="ghost" size="icon" title="Logout" aria-label="Logout">
+                <LogOut className="h-5 w-5" />
               </Button>
             </>
           ) : (
             <>
-              <Link to="/login"><Button variant="ghost">Login</Button></Link>
-              <Link to="/signup"><Button variant="default">Sign Up</Button></Link>
+              <Button asChild variant="ghost" className="h-9 px-3 text-xs sm:text-sm">
+                <Link to="/login">Login</Link>
+              </Button>
+              <Button asChild variant="default" className="h-9 px-3 text-xs sm:text-sm">
+                <Link to="/signup">Sign Up</Link>
+              </Button>
             </>
           )}
         </nav>

@@ -2,6 +2,8 @@ import * as React from 'react';
 import { useAuth } from '@/features/auth/AuthContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PickupList } from '@/features/pickups/PickupList';
+import { VendorCapacityPanel } from '@/features/pickups/VendorCapacityPanel';
+import { BuybackPricingPanel } from '@/features/pickups/BuybackPricingPanel';
 import { Card, CardContent } from '@/components/ui/card';
 import { ClipboardList, CheckCircle2, Truck, PackageCheck } from 'lucide-react';
 
@@ -29,13 +31,25 @@ export function VendorDashboardPage() {
   ];
 
   return (
-    <div className="container mx-auto space-y-8 px-4 py-8">
-      <div><p className="text-sm font-medium text-primary">Recycler workspace</p><h1 className="text-3xl font-bold">Vendor Dashboard</h1><p className="text-muted-foreground">Welcome, {session?.name}. Manage requests through collection and recycling.</p></div>
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{stats.map(({ label, value, icon: Icon }) => <Card key={label}><CardContent className="flex items-center justify-between pt-6"><div><p className="text-sm text-muted-foreground">{label}</p><p className="text-2xl font-bold">{value}</p></div><Icon className="h-5 w-5 text-primary" /></CardContent></Card>)}</section>
+    <div className="container mx-auto max-w-7xl space-y-8 px-4 py-8 sm:py-10">
+      <div>
+        <p className="mb-2 text-sm font-semibold text-primary">Recycler workspace</p>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Vendor Dashboard</h1>
+        <p className="mt-2 text-sm text-muted-foreground sm:text-base">Welcome, {session?.name}. Manage requests through collection and recycling.</p>
+      </div>
+      <section aria-label="Pickup overview" className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">{stats.map(({ label, value, icon: Icon }) => <Card key={label}><CardContent className="flex min-h-28 items-center justify-between gap-3 p-4 sm:p-5"><div><p className="text-xs text-muted-foreground sm:text-sm">{label}</p><p className="mt-2 text-2xl font-bold">{value}</p></div><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="h-4 w-4" /></span></CardContent></Card>)}</section>
+      <VendorCapacityPanel />
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="available">Pickup Requests</TabsTrigger><TabsTrigger value="assigned">My Pickups</TabsTrigger></TabsList>
+        <TabsList className="grid h-auto w-full grid-cols-4">
+          <TabsTrigger value="available">Recycling Pickup Requests</TabsTrigger>
+          <TabsTrigger value="assigned">My Recycling Pickups</TabsTrigger>
+          <TabsTrigger value="inventory">Inventory</TabsTrigger>
+          <TabsTrigger value="buyback">Buyback Pricing</TabsTrigger>
+        </TabsList>
         <TabsContent value="available"><PickupList key="available" filter="available" /></TabsContent>
         <TabsContent value="assigned"><PickupList key="assigned" filter="assigned" /></TabsContent>
+        <TabsContent value="inventory"><PickupList key="inventory" filter="inventory" /></TabsContent>
+        <TabsContent value="buyback"><BuybackPricingPanel /></TabsContent>
       </Tabs>
     </div>
   );

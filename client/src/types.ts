@@ -19,12 +19,29 @@ export interface Pickup {
   scheduled_at?: string | null;
   collected_at?: string | null;
   recycled_at?: string | null;
-  points_awarded?: number;
   latitude?: number | null;
   longitude?: number | null;
   recyclerName?: string | null;
   lastStatus?: string;
   lastStatusUpdate?: string;
+}
+
+export interface PickupVerification {
+  pickup_id: number;
+  actual_device_type: string;
+  quantity: number;
+  condition: 'working' | 'partially_working' | 'damaged' | 'non_functional';
+  damage_notes: string | null;
+  photo_data: string | null;
+  photo_mime: string | null;
+  verified_at: string;
+}
+
+export interface VendorSettings {
+  accepted_categories: string | null;
+  accepting_pickups: boolean;
+  pickup_capacity: number | null;
+  active_quantity: number;
 }
 
 export interface Campaign {
@@ -52,13 +69,18 @@ export interface Recycler {
   distanceKm?: number | null;
   matchScore?: number;
   specialHandling?: boolean;
+  is_demo?: number;
+  service_area?: string | null;
+  demo_description?: string | null;
+  pickup_capacity?: number | null;
+  active_quantity?: number;
+  locationMatch?: boolean;
 }
 
 export interface EcoImpact {
   devices: number;
   landfillKg: number;
   co2Kg: number;
-  points: number;
   completedPickups: number;
 }
 
@@ -96,7 +118,6 @@ export interface RecyclingActivity {
   devicesAnalyzed: number;
   pickupsRequested: number;
   itemsRecycled: number;
-  rewardPoints: number;
   estimatedEwasteDivertedKg: number;
   recentActivity: Array<{ type: string; detail: string; occurredAt: string }>;
 }
