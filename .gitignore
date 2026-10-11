@@ -1,10 +1,35 @@
-node_modules
+# Dependencies
 node_modules/
+
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
 client/.env
+client/.env.*
+!client/.env.example
+
+# Local demo credentials
 demo-credentials.local.json
+
+# Local database and backups
+data/database.sqlite
+data/database.sqlite-*
+*.sqlite
+*.sqlite3
+*.db
+
+# Build files
 dist/
 .vite/
+
+# RAG generated files
 rag/embeddings/*.faiss
-rag/embeddings/metadata.json.venv/
+rag/embeddings/metadata.json
+
+# Python virtual environments
 .venv/
+venv/
+
+# Logs
+*.log
